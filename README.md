@@ -200,6 +200,41 @@ agents-cli scaffold create --agent github.com/enriquekalven/adk-ge-datastore-con
 
 ---
 
+## 🔒 Enterprise Production Readiness & Security Checklist
+
+Before deploying this ADK agent to enterprise production on Google Cloud Vertex AI Agent Engine, ensure all four compliance and platform governance pillars are configured:
+
+### 1. Security & Identity Architecture
+- [x] **Zero-Trust User ACL Propagation**: Dynamic user OAuth token extraction via `ToolContext.state[AUTH_NAME]` (Veer Muchandi Pattern).
+- [ ] **Agent Identity Auth Manager Proxy**: Deploy with `--agent-identity` to manage user identity delegation tokens securely without storing secrets in code.
+- [ ] **Identity-Aware Proxy (IAP)**: Enable IAP (`--iap`) for Cloud Run / custom UI endpoints to enforce corporate Google Workspace Single Sign-On.
+- [ ] **Agent Gateway Egress Governance**: Route agent-to-tool traffic through `google_network_services_agent_gateway` with Private Service Connect (PSC) interfaces to keep search traffic inside your private VPC.
+
+### 2. Compliance & Legal Policies
+- [ ] **Geographic Data Residency**: Set `LOCATION` in `agent.yaml` (`us`, `eu`, `global`) to comply with local data sovereignty laws (GDPR, HIPAA).
+- [ ] **Model Armor & Semantic Governance**: Define Semantic Governance Policies (SGP) to audit agent tool calls, block prompt-injection attacks, and redact PII/SSNs before outputting responses.
+
+### 3. FinOps & Cost Optimization
+- [ ] **Discovery Engine Billing**: Monitor search API usage (billed at ~$1.50 – $2.50 per 1,000 queries).
+- [ ] **Agent Runtime Auto-Scaling**: Configure container sizing (`--cpu 1`, `--memory 4Gi`, `--concurrency 8`, `--min-instances 0`, `--max-instances 10`) to enable scale-to-zero when idle.
+
+### 🚀 Production Deployment Command
+
+To launch a fully hardened, identity-aware agent on Vertex AI Agent Runtime:
+
+```bash
+agents-cli deploy \
+  --deployment-target agent_runtime \
+  --agent-identity \
+  --iap \
+  --cpu 2 \
+  --memory 8Gi \
+  --concurrency 16 \
+  --secrets "AUTH_CLIENT_SECRET=enterprise-oauth-secret:latest"
+```
+
+---
+
 ## 🚀 Quickstart & Verification
 
 ### 1. Installation
