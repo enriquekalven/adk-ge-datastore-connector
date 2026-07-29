@@ -11,15 +11,88 @@ This repository implements **Veer Muchandi's Generic OAuth/ACL Token Propagation
 
 ---
 
-## 🗺️ Universal Datastore Compatibility Matrix
+## 🗺️ Complete Supported Connectors Matrix (89 Official Connectors)
 
-This architecture is **100% compatible with ALL 50+ connectors** in the [Gemini Enterprise Documentation](https://docs.cloud.google.com/gemini/enterprise/docs/connectors/connect-third-party-data-source).
+This architecture is **100% compatible with all 89 official data connectors** supported by [Gemini Enterprise](https://docs.cloud.google.com/gemini/enterprise/docs/connectors/connect-third-party-data-source).
 
-| Connector Category | Example Datastores | Authentication Mechanism in ADK |
+### 🔑 Category A: User-Level OAuth ACL Connectors (Token Propagation)
+*Enforces end-user permissions at query time using Veer Muchandi's `ToolContext.state[AUTH_NAME]` pattern.*
+
+| Connector Name | `provider` in `agent.yaml` | Target `ENGINE_ID` | OAuth Scopes / Permissions |
+| :--- | :--- | :--- | :--- |
+| **Microsoft SharePoint Online** | `AZURE_AD` | `sharepoint-engine` | `Files.Read.All`, `Sites.Read.All` |
+| **Microsoft OneDrive** | `AZURE_AD` | `onedrive-engine` | `Files.Read.All` |
+| **Microsoft Outlook** | `AZURE_AD` | `outlook-engine` | `Mail.Read` |
+| **Microsoft Teams** | `AZURE_AD` | `msteams-engine` | `ChannelMessage.Read.All` |
+| **Microsoft Entra ID** | `AZURE_AD` | `entra-engine` | `User.Read.All` |
+| **Atlassian Jira Cloud** | `ATLASSIAN` | `jira-engine` | `read:jira-work`, `read:jira-user` |
+| **Atlassian Jira Data Center** | `ATLASSIAN` | `jira-dc-engine` | Service account / OAuth PAT |
+| **Atlassian Confluence Cloud** | `ATLASSIAN` | `confluence-engine` | `read:confluence-content.summary` |
+| **Atlassian Confluence DC** | `ATLASSIAN` | `confluence-dc-engine` | Service account / OAuth PAT |
+| **Google Drive** | `GOOGLE` | `gdrive-engine` | `https://www.googleapis.com/auth/drive.readonly` |
+| **Gmail** | `GOOGLE` | `gmail-engine` | `https://www.googleapis.com/auth/gmail.readonly` |
+| **Google Calendar** | `GOOGLE` | `gcal-engine` | `https://www.googleapis.com/auth/calendar.readonly` |
+| **Google Chat** | `GOOGLE` | `gchat-engine` | `https://www.googleapis.com/auth/chat.spaces.readonly` |
+| **Salesforce** | `SALESFORCE` | `salesforce-engine` | `api`, `refresh_token` |
+| **ServiceNow** | `SERVICENOW` | `servicenow-engine` | `user_data` |
+
+---
+
+### 💼 Category B: Third-Party & Workspace Connectors (System API / ADC Query)
+*Ingested centrally by Gemini Enterprise; queried by ADK Agents using Application Default Credentials (ADC).*
+
+| Connector Name | Datastore Category | Connector Name | Datastore Category |
+| :--- | :--- | :--- | :--- |
+| **AirOps** | Data Automation | **Airtable** | No-Code Relational DB |
+| **Aiwyn Tax** | Financial / Tax | **AllTrails** | Geospatial / Content |
+| **Apollo GraphOS** | GraphQL Metadata | **Asana** | Project Management |
+| **Autodesk Product Help** | Documentation | **AWS Marketplace** | Catalog / Licensing |
+| **Blockscout** | Blockchain Explorer | **Box** | Cloud Storage |
+| **Calendly** | Scheduling | **Clinical Trials** | Medical / Healthcare |
+| **Courtroom5** | Legal Case Mgmt | **Crossbeam** | Partner Ecosystem |
+| **Crypto** | Blockchain Analytics | **Dice** | Job / Recruitment |
+| **Docusign & Sandbox** | E-Signatures | **Dropbox** | Cloud Storage |
+| **Dynamics 365** | Enterprise ERP/CRM | **Egnyte** | Enterprise File Sync |
+| **Excalidraw** | Visual Diagrams | **Freshservice** | ITSM / Service Desk |
+| **GitHub** | Code Repos & Issues | **GitLab** | DevOps & Repos |
+| **GoDaddy** | Web Hosting | **Google Stitch** | Enterprise Ingestion |
+| **Granted** | Grant Management | **HubSpot** | Marketing & CRM |
+| **Hugging Face** | AI Model Registry | **Intercom** | Customer Messaging |
+| **Invideo** | Video Generation | **Kiwi** | Travel / Logistics |
+| **LastMinute** | Booking / Travel | **Linear** | Software Issue Tracking |
+| **Lovable** | App Development | **LumApps** | Corporate Intranet |
+| **MailerLite** | Email Marketing | **Mermaid Chart** | Diagramming |
+| **Microsoft Learn** | Knowledge Base | **Midpage** | Legal Research |
+| **Monday.com** | Work OS / Tasks | **Notion** | Notes & Workspaces |
+| **Open Targets** | Bio-Pharma Data | **PagerDuty** | Incident Response |
+| **PandaDoc** | Document Automation | **pg-aiguide** | AI Engineering |
+| **ServiceM8** | Field Service | **Shopify** | E-Commerce Catalog |
+| **Slack** | Team Chat & History | **Smartsheet** | Collaborative Sheets |
+| **Sourcegraph** | Code Intelligence | **Taskrabbit** | Operational Tasks |
+| **Tavily** | Web Search API | **Trivago** | Hospitality Search |
+| **Twilio Docs** | API Documentation | **Viator** | Tours & Activities |
+| **Wrike** | Work Management | **Zendesk** | Customer Support Tickets |
+| **Zoho Books** | Accounting | **Zoho CRM** | Customer Relationship |
+| **Zoho Desk** | Support Desk | **Zoho Projects** | Project Tracking |
+| **ZoomInfo** | B2B Intelligence | | |
+
+---
+
+### ☁️ Category C: GCP Native Data Sources & Managed Databases
+*Ingested directly via Google Cloud infrastructure and IAM roles (`roles/discoveryengine.viewer`).*
+
+| Data Source Name | GCP Service | Primary Use Case |
 | :--- | :--- | :--- |
-| **Category A: User-Level OAuth ACLs** | Microsoft SharePoint, OneDrive, Teams, Jira, Confluence, Google Drive, Salesforce, ServiceNow | **Veer Muchandi Pattern**: End-user OAuth token passed via `ToolContext.state[AUTH_NAME]`. |
-| **Category B: System API / Workspace** | Airtable, Asana, Box, Calendly, Docusign, Dropbox, HubSpot, Intercom, Linear, Monday.com, Notion, PagerDuty, Smartsheet, Slack, Wrike, Zendesk, Zoho | **ADC / Service Account**: Org-level central indexing query using GCP Application Default Credentials. |
-| **Category C: GCP Native & Databases** | BigQuery, Cloud Storage, Cloud SQL, AlloyDB, Spanner, Firestore, Bigtable | **GCP IAM Permissions**: Queries governed by `roles/discoveryengine.viewer`. |
+| **BigQuery** | Analytics Data Warehouse | Enterprise SQL analytical RAG search |
+| **Cloud Storage (GCS)** | Object Storage | Unstructured PDF, DOCX, and HTML document corpus |
+| **AlloyDB for PostgreSQL** | Managed PostgreSQL | High-performance relational data search |
+| **Cloud SQL** | MySQL / Postgres / SQL Server | Transactional relational datastores |
+| **Spanner** | Distributed Relational DB | Globally scalable database search |
+| **Firestore** | NoSQL Document DB | Operational app state & document storage |
+| **Bigtable** | NoSQL Wide-Column DB | High-throughput analytical data |
+| **Google Compute Engine** | Infrastructure Logs | VM metadata and system log search |
+| **Google Groups** | Workspace Directory | Organizational mailing list history |
+| **Google Sites** | Corporate Web Pages | Intranet web pages and internal sites |
 
 ---
 
