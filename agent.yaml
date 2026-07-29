@@ -1,0 +1,36 @@
+# Universal Agent Manifest Definition for ADK & Gemini Enterprise Deployment
+name: enterprise_knowledge_agent
+display_name: "Generic ACL-Aware Enterprise Knowledge Agent"
+description: "Universal ADK Agent integrating Veer Muchandi's OAuth/ACL token propagation pattern for secure multi-datastore queries via Discovery Engine."
+
+version: "1.0.0"
+entrypoint: "agent:root_agent"
+
+# Environment Variables Configuration
+env:
+  PROJECT_ID: "your-gcp-project-id"
+  PROJECT_NUMBER: "123456789012" # Note: Must use GCP Project Number
+  LOCATION: "global"
+  COLLECTION: "default_collection"
+  ENGINE_ID: "enterprise-datastore-engine" # e.g. sharepoint-engine, jira-engine, gdrive-engine
+  AUTH_NAME: "enterprise_oauth"            # e.g. sharepoint_oauth, jira_oauth, gdrive_oauth
+  MODEL_NAME: "gemini-2.0-flash"
+
+# Authorization Configuration Example (Veer Muchandi ACL Pattern)
+# Dynamically injects session OAuth tokens into ToolContext.state[AUTH_NAME]
+# Supported Providers: AZURE_AD, ATLASSIAN, GOOGLE, SALESFORCE, SERVICENOW
+authorizationConfig:
+  oauthClient:
+    name: "enterprise_oauth"
+    provider: "AZURE_AD" # Change to ATLASSIAN, GOOGLE, SALESFORCE, etc.
+    scopes:
+      - "Files.Read.All"
+      - "Sites.Read.All"
+
+  # Session State Injection Mapping
+  stateInjection:
+    - targetKey: "enterprise_oauth"
+      sourceClaim: "access_token"
+
+  # Resource specification using GCP Project Number (e.g. projects/{PROJECT_NUMBER}/locations/global/authorizations/{AUTH_NAME})
+  resource: "projects/123456789012/locations/global/authorizations/enterprise-oauth-config"

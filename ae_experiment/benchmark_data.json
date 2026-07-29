@@ -1,0 +1,26 @@
+[
+  {
+    "query": "Q3 financial security audit report",
+    "raw_results": [
+      {
+        "document": {
+          "derivedStructData": {
+            "title": "General Employee Onboarding Manual 2026",
+            "link": "https://enterprise.internal/hr/onboarding.pdf",
+            "snippets": [{"snippet": "Welcome to the company. Please ensure your badges are visible at all times."}]
+          }
+        }
+      },
+      {
+        "document": {
+          "derivedStructData": {
+            "title": "Quarterly Financial Security Audit Q3 2026",
+            "link": "https://enterprise.internal/finance/audit_q3_2026.pdf",
+            "snippets": [{"snippet": "Q3 Financial Audit Summary: Total revenue $4.2M, SOC2 compliance verified."}]
+          }
+        }
+      }
+    ],
+    "target_top_title": "Quarterly Financial Security Audit Q3 2026"
+  }
+]
