@@ -18,3 +18,4 @@ venv/
 # Temporary artifacts
 tmp/
 *.log
+PRD*.md
