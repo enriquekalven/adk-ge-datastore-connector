@@ -111,9 +111,10 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
             logger.error(f"Failed to acquire ADC token: {err}")
             return "Authentication Error: Unable to acquire valid credentials for enterprise search."
 
-    # 3. Construct Discovery Engine REST API Endpoint (Regional Host Resolution)
+    # 3. Construct Discovery Engine REST API Endpoint (Regional Host & Engine/DataStore Resource Resolution)
     host = f"{location}-discoveryengine.googleapis.com" if location not in ("global", "us") else "discoveryengine.googleapis.com"
-    url = f"https://{host}/v1alpha/projects/{project_id}/locations/{location}/collections/{collection}/engines/{engine_id}/servingConfigs/default_search:search"
+    resource_type = "dataStores" if ("dataStore" in engine_id or engine_id.startswith("test_")) else "engines"
+    url = f"https://{host}/v1alpha/projects/{project_id}/locations/{location}/collections/{collection}/{resource_type}/{engine_id}/servingConfigs/default_search:search"
     
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -136,6 +137,12 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
     try:
         # Non-blocking timeouts (3.05s connect, 10s read)
         response = session.post(url, json=payload, headers=headers, timeout=(3.05, 10.0))
+        
+        # Automatic fallback from /engines/ to /dataStores/ if 404 is encountered
+        if response.status_code == 404 and resource_type == "engines":
+            fallback_url = f"https://{host}/v1alpha/projects/{project_id}/locations/{location}/collections/{collection}/dataStores/{engine_id}/servingConfigs/default_search:search"
+            logger.info(f"Retrying query against dataStore endpoint: {fallback_url}")
+            response = session.post(fallback_url, json=payload, headers=headers, timeout=(3.05, 10.0))
         
         # 401 Unauthorized Token Expiry Detection
         if response.status_code == 401:

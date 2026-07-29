@@ -6,10 +6,10 @@ from google.adk.tools import ToolContext
 from tools.datastore_search import query_enterprise_datastore
 
 def get_live_gcloud_token() -> str:
-    """Retrieves an active OAuth access token from the local gcloud CLI session."""
+    """Retrieves an active OAuth access token from the local ADC session."""
     try:
         token = subprocess.check_output(
-            ["gcloud", "auth", "print-access-token"],
+            ["gcloud", "auth", "application-default", "print-access-token"],
             text=True
         ).strip()
         return token
@@ -39,7 +39,9 @@ def run_live_datastore_test(project_id: str, engine_id: str, search_query: str, 
     print(f"• Access Token Prefix: {token[:15]}...")
     
     # 3. Construct ADK ToolContext with injected state
-    mock_context = ToolContext(state={"enterprise_oauth": token})
+    from unittest.mock import MagicMock
+    mock_context = MagicMock(spec=ToolContext)
+    mock_context.state = {"enterprise_oauth": token}
     
     # 4. Execute Live Query
     print("\n--- Executing Live API Query to discoveryengine.googleapis.com ---")
