@@ -19,3 +19,4 @@ venv/
 tmp/
 *.log
 PRD*.md
+MEDIUM*.md
