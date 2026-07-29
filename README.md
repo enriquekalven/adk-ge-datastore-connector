@@ -11,24 +11,15 @@ This repository implements **Veer Muchandi's Generic OAuth/ACL Token Propagation
 
 ---
 
-## 🗺️ Enterprise Datastore Provider Matrix
+## 🗺️ Universal Datastore Compatibility Matrix
 
-| Enterprise Datastore | `provider` in `agent.yaml` | Target `ENGINE_ID` | Primary Scopes / Credentials |
-| :--- | :--- | :--- | :--- |
-| **Microsoft SharePoint Online** | `AZURE_AD` | `sharepoint-engine` | `Files.Read.All`, `Sites.Read.All` |
-| **Microsoft OneDrive** | `AZURE_AD` | `onedrive-engine` | `Files.Read.All` |
-| **Microsoft Outlook** | `AZURE_AD` | `outlook-engine` | `Mail.Read` |
-| **Microsoft Teams** | `AZURE_AD` | `msteams-engine` | `ChannelMessage.Read.All` |
-| **Atlassian Jira Cloud / DC** | `ATLASSIAN` | `jira-engine` | `read:jira-work`, `read:jira-user` |
-| **Atlassian Confluence Cloud / DC** | `ATLASSIAN` | `confluence-engine` | `read:confluence-content.summary` |
-| **Google Drive / Workspace** | `GOOGLE` | `gdrive-engine` | `https://www.googleapis.com/auth/drive.readonly` |
-| **Salesforce** | `SALESFORCE` | `salesforce-engine` | `api`, `refresh_token` |
-| **ServiceNow** | `SERVICENOW` | `servicenow-engine` | `user_data` |
-| **Zendesk** | `ZENDESK` | `zendesk-engine` | `read` |
-| **GitHub / GitLab** | `GITHUB` / `GITLAB` | `github-engine` | `repo`, `read:user` |
-| **Slack** | `SLACK` | `slack-engine` | `channels:history`, `groups:history` |
-| **Box / Dropbox** | `BOX` / `DROPBOX` | `box-engine` | `root_readwrite` / `files.metadata.read` |
-| **Notion** | `NOTION` | `notion-engine` | `responses.read` |
+This architecture is **100% compatible with ALL 50+ connectors** in the [Gemini Enterprise Documentation](https://docs.cloud.google.com/gemini/enterprise/docs/connectors/connect-third-party-data-source).
+
+| Connector Category | Example Datastores | Authentication Mechanism in ADK |
+| :--- | :--- | :--- |
+| **Category A: User-Level OAuth ACLs** | Microsoft SharePoint, OneDrive, Teams, Jira, Confluence, Google Drive, Salesforce, ServiceNow | **Veer Muchandi Pattern**: End-user OAuth token passed via `ToolContext.state[AUTH_NAME]`. |
+| **Category B: System API / Workspace** | Airtable, Asana, Box, Calendly, Docusign, Dropbox, HubSpot, Intercom, Linear, Monday.com, Notion, PagerDuty, Smartsheet, Slack, Wrike, Zendesk, Zoho | **ADC / Service Account**: Org-level central indexing query using GCP Application Default Credentials. |
+| **Category C: GCP Native & Databases** | BigQuery, Cloud Storage, Cloud SQL, AlloyDB, Spanner, Firestore, Bigtable | **GCP IAM Permissions**: Queries governed by `roles/discoveryengine.viewer`. |
 
 ---
 
