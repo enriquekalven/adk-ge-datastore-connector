@@ -67,8 +67,9 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
             logger.error(f"Failed to acquire ADC token: {err}")
             return "Authentication Error: Unable to acquire valid credentials for enterprise search."
 
-    # 3. Construct Discovery Engine REST API Endpoint
-    url = f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/locations/{location}/collections/{collection}/engines/{engine_id}/servingConfigs/default_search:search"
+    # 3. Construct Discovery Engine REST API Endpoint (Regional Host Fallback)
+    host = f"{location}-discoveryengine.googleapis.com" if location not in ("global", "us") else "discoveryengine.googleapis.com"
+    url = f"https://{host}/v1alpha/projects/{project_id}/locations/{location}/collections/{collection}/engines/{engine_id}/servingConfigs/default_search:search"
     
     headers = {
         "Authorization": f"Bearer {access_token}",
