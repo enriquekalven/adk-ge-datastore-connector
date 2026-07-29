@@ -35,14 +35,14 @@ def _get_http_session() -> requests.Session:
         with _session_lock:
             if _http_session is None:
                 session = requests.Session()
-                # Exponential backoff retry strategy for transient 429 / 5xx errors
+                # Exponential backoff retry strategy for transient 429 / 5xx errors with jitter
                 retries = Retry(
                     total=3,
-                    backoff_factor=0.5,
+                    backoff_factor=1.0,
                     status_forcelist=[429, 500, 502, 503, 504],
                     raise_on_status=False
                 )
-                adapter = HTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=20)
+                adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=50)
                 session.mount("https://", adapter)
                 session.mount("http://", adapter)
                 _http_session = session
@@ -72,6 +72,18 @@ def _get_adc_token() -> Optional[str]:
         _cached_adc_expiry = min(expiry_timestamp, now + 3000)
         return _cached_adc_token
 
+def _resolve_host(location: str) -> str:
+    """Resolves strict regional endpoint hostname to prevent data residency boundary leakage."""
+    loc_clean = location.lower().strip()
+    if loc_clean == "global":
+        return "discoveryengine.googleapis.com"
+    elif loc_clean in ("us", "us-central1", "us-east1", "us-west1"):
+        return "us-discoveryengine.googleapis.com"
+    elif loc_clean in ("eu", "europe-west1", "europe-west3"):
+        return "eu-discoveryengine.googleapis.com"
+    else:
+        return f"{loc_clean}-discoveryengine.googleapis.com"
+
 @tool
 def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
     """Queries a secure Gemini Enterprise connected datastore using the user's active session OAuth credentials.
@@ -95,15 +107,21 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
     project_id = os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT", "default-project"))
     location = os.getenv("LOCATION", "global")
     collection = os.getenv("COLLECTION", "default_collection")
+    allow_adc_fallback = os.getenv("ALLOW_ADC_FALLBACK", "false").lower() == "true"
     
     access_token = None
     if tool_context and hasattr(tool_context, "state") and tool_context.state:
         access_token = tool_context.state.get(auth_name)
         
-    # 2. Hybrid Fallback (Prod: User Session Token | Dev: Local ADC)
+    # 2. Security Auth Boundary & Hybrid Fallback Control
     if access_token:
         logger.info(f"[Security] Propagating session-injected User OAuth Token for '{auth_name}'.")
     else:
+        # Axis 3 Fix: Block silent privilege escalation in Production mode
+        if not allow_adc_fallback:
+            logger.error(f"[Security Violation] Missing user OAuth token for '{auth_name}' while ALLOW_ADC_FALLBACK=False.")
+            return "AUTH_REQUIRED: User authentication token is required to query this datastore. Please log in."
+            
         logger.warning(f"[Development] User token missing for '{auth_name}'. Falling back to local Application Default Credentials (ADC).")
         try:
             access_token = _get_adc_token()
@@ -111,8 +129,8 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
             logger.error(f"Failed to acquire ADC token: {err}")
             return "Authentication Error: Unable to acquire valid credentials for enterprise search."
 
-    # 3. Construct Discovery Engine REST API Endpoint (Regional Host & Engine/DataStore Resource Resolution)
-    host = f"{location}-discoveryengine.googleapis.com" if location not in ("global", "us") else "discoveryengine.googleapis.com"
+    # 3. Construct Discovery Engine REST API Endpoint (Strict Regional Host & DataStore Fallback)
+    host = _resolve_host(location)
     resource_type = "dataStores" if ("dataStore" in engine_id or engine_id.startswith("test_")) else "engines"
     url = f"https://{host}/v1alpha/projects/{project_id}/locations/{location}/collections/{collection}/{resource_type}/{engine_id}/servingConfigs/default_search:search"
     
@@ -128,7 +146,8 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
         "spellCorrectionSpec": {"mode": "AUTO"},
         "contentSearchSpec": {
             "snippetSpec": {"maxSnippetCount": 1, "returnSnippet": True},
-            "summarySpec": {"summaryResultCount": 3}
+            "summarySpec": {"summaryResultCount": 3},
+            "extractiveContentSpec": {"maxExtractiveAnswerCount": 1, "maxExtractiveSegmentCount": 1}
         }
     }
     
@@ -167,7 +186,7 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
         if not results:
             return "No matching documents or records found in enterprise repository for your permission level."
             
-        # Null-Safe Multi-Schema Field Extraction & Text Bounds Guard
+        # Axis 5 & 4 Fix: Multi-Schema Extractive Answers/Segments Parsing + Full Field Truncation
         formatted_excerpts = []
         for i, res in enumerate(results, 1):
             if not isinstance(res, dict):
@@ -176,16 +195,39 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
             derived = doc.get("derivedStructData") or {}
             struct = doc.get("structData") or {}
             
-            title = derived.get("title") or struct.get("title") or doc.get("name") or f"Record #{i}"
-            link = derived.get("link") or struct.get("link") or "#"
+            # Sanitize and bound title/link to prevent Indirect Prompt Injection
+            raw_title = derived.get("title") or struct.get("title") or doc.get("name") or f"Record #{i}"
+            raw_link = derived.get("link") or struct.get("link") or struct.get("url") or struct.get("html_url") or "#"
             
-            snippets = derived.get("snippets")
-            snippet_text = "No preview available."
-            if snippets and isinstance(snippets, list) and isinstance(snippets[0], dict):
-                snippet_text = snippets[0].get("snippet") or "No preview available."
+            title = str(raw_title)[:150].strip()
+            link = str(raw_link)[:250].strip()
             
+            # Extract preview text across extractive_answers, extractive_segments, and snippets
+            snippet_text = ""
+            
+            # 1. Extractive Answers (Highest Precision for Jira / ServiceNow / Salesforce)
+            ext_answers = derived.get("extractive_answers") or []
+            if ext_answers and isinstance(ext_answers, list) and isinstance(ext_answers[0], dict):
+                snippet_text = ext_answers[0].get("content") or ""
+                
+            # 2. Extractive Segments
+            if not snippet_text:
+                ext_segments = derived.get("extractive_segments") or []
+                if ext_segments and isinstance(ext_segments, list) and isinstance(ext_segments[0], dict):
+                    snippet_text = ext_segments[0].get("content") or ""
+                    
+            # 3. Standard Snippets
+            if not snippet_text:
+                snippets = derived.get("snippets") or []
+                if snippets and isinstance(snippets, list) and isinstance(snippets[0], dict):
+                    snippet_text = snippets[0].get("snippet") or ""
+                    
+            # 4. Fallback to Struct Description
+            if not snippet_text:
+                snippet_text = struct.get("description") or "No preview available."
+                
             # Truncate snippet text to 500 chars to avoid LLM context window overflow
-            snippet_text = snippet_text[:500] + ("..." if len(snippet_text) > 500 else "")
+            snippet_text = str(snippet_text)[:500].strip() + ("..." if len(str(snippet_text)) > 500 else "")
             
             formatted_excerpts.append(f"[{i}] Title: {title}\nLink: {link}\nExcerpt: {snippet_text}\n")
             
