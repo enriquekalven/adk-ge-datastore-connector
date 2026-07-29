@@ -13,14 +13,22 @@ This repository implements **Veer Muchandi's Generic OAuth/ACL Token Propagation
 
 ## 🗺️ Enterprise Datastore Provider Matrix
 
-| Enterprise Datastore | `provider` in `agent.yaml` | OAuth Scopes | Target `ENGINE_ID` |
+| Enterprise Datastore | `provider` in `agent.yaml` | Target `ENGINE_ID` | Primary Scopes / Credentials |
 | :--- | :--- | :--- | :--- |
-| **Microsoft SharePoint** | `AZURE_AD` | `Files.Read.All`, `Sites.Read.All` | `sharepoint-engine` |
-| **Google Drive** | `GOOGLE` | `https://www.googleapis.com/auth/drive.readonly` | `gdrive-engine` |
-| **Atlassian Jira** | `ATLASSIAN` | `read:jira-work`, `read:jira-user` | `jira-engine` |
-| **Atlassian Confluence** | `ATLASSIAN` | `read:confluence-content.summary` | `confluence-engine` |
-| **Salesforce** | `SALESFORCE` | `api`, `refresh_token` | `salesforce-engine` |
-| **ServiceNow** | `SERVICENOW` | `user_data` | `servicenow-engine` |
+| **Microsoft SharePoint Online** | `AZURE_AD` | `sharepoint-engine` | `Files.Read.All`, `Sites.Read.All` |
+| **Microsoft OneDrive** | `AZURE_AD` | `onedrive-engine` | `Files.Read.All` |
+| **Microsoft Outlook** | `AZURE_AD` | `outlook-engine` | `Mail.Read` |
+| **Microsoft Teams** | `AZURE_AD` | `msteams-engine` | `ChannelMessage.Read.All` |
+| **Atlassian Jira Cloud / DC** | `ATLASSIAN` | `jira-engine` | `read:jira-work`, `read:jira-user` |
+| **Atlassian Confluence Cloud / DC** | `ATLASSIAN` | `confluence-engine` | `read:confluence-content.summary` |
+| **Google Drive / Workspace** | `GOOGLE` | `gdrive-engine` | `https://www.googleapis.com/auth/drive.readonly` |
+| **Salesforce** | `SALESFORCE` | `salesforce-engine` | `api`, `refresh_token` |
+| **ServiceNow** | `SERVICENOW` | `servicenow-engine` | `user_data` |
+| **Zendesk** | `ZENDESK` | `zendesk-engine` | `read` |
+| **GitHub / GitLab** | `GITHUB` / `GITLAB` | `github-engine` | `repo`, `read:user` |
+| **Slack** | `SLACK` | `slack-engine` | `channels:history`, `groups:history` |
+| **Box / Dropbox** | `BOX` / `DROPBOX` | `box-engine` | `root_readwrite` / `files.metadata.read` |
+| **Notion** | `NOTION` | `notion-engine` | `responses.read` |
 
 ---
 
@@ -30,7 +38,7 @@ When building custom high-code AI agents on Google Cloud Vertex AI / Gemini Ente
 
 | GCP Blocker / Issue ID | Problem Description | Solution in This Repository |
 | :--- | :--- | :--- |
-| **The "Connector Wall"<br>`(GCP Issue #434712760)`** | Custom ADK agents on Agent Engine do not inherit no-code Agentspace connector tools automatically. | **Custom Universal REST Tool**: Directly calls `discoveryengine.googleapis.com` API endpoints. |
+| **The "Connector Wall"<br>`(GCP Issue #434712760)`** | Custom ADK agents on Agent Engine do not inherit no-code Gemini Enterprise app connector tools automatically. | **Custom Universal REST Tool**: Directly calls `discoveryengine.googleapis.com` API endpoints. |
 | **`VertexAiSearchTool` Bugs<br>`(GCP Issues #483989453 & #897)`** | Built-in `VertexAiSearchTool` uses Service Account (ADC) credentials, returning empty metadata for connected datastores. | **Bypasses `VertexAiSearchTool`**: Uses custom Bearer token HTTP authorization headers. |
 | **ACL Security Loss** | Service account queries bypass user-level document/ticket permissions, creating security compliance risks. | **Veer Muchandi ACL Pattern**: Extracts user OAuth tokens from `ToolContext.state` to enforce user ACLs. |
 
@@ -42,7 +50,7 @@ When building custom high-code AI agents on Google Cloud Vertex AI / Gemini Ente
 sequenceDiagram
     autonumber
     actor User as Calling End-User
-    participant GE as Gemini Enterprise (Agentspace)
+    participant GE as Gemini Enterprise App
     participant ADK as Custom ADK Agent (agent.py)
     participant Tool as Generic Tool (tools/datastore_search.py)
     participant DE as GCP Discovery Engine REST API
