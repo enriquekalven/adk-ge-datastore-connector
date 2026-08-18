@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 from google.adk.tools import ToolContext
 from config import AuthMode, DatastoreBinding
-from tools.datastore_search import create_enterprise_datastore_tool
+from tools.datastore_search import create_enterprise_datastore_tool, _get_adc_token, _invalidate_adc_token
 
 @pytest.fixture(autouse=True)
 def setup_env():
@@ -17,8 +17,8 @@ def setup_env():
     os.environ.clear()
     os.environ.update(orig)
 
-def test_enterprise_fleet_concurrency_20_datastores():
-    """Simulates enterprise scale with 20 concurrent datastores and 100 parallel query threads."""
+def test_enterprise_fleet_concurrency_and_per_thread_auth_isolation():
+    """Simulates enterprise scale with 20 datastores and verifies per-thread token isolation."""
     bindings = []
     
     # 8 Category A connectors
@@ -55,13 +55,14 @@ def test_enterprise_fleet_concurrency_20_datastores():
     tools = [create_enterprise_datastore_tool(b) for b in bindings]
     assert len(tools) == 20
 
-    # Mock Discovery Engine backend
+    observed_headers = []
+    
     def mock_backend(url, json=None, headers=None, timeout=None):
+        auth_hdr = headers.get("Authorization", "")
+        observed_headers.append((url, auth_hdr))
+        
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        auth_hdr = headers.get("Authorization", "")
-        
-        # Simulate structured results
         mock_resp.json.return_value = {
             "results": [
                 {
@@ -96,17 +97,21 @@ def test_enterprise_fleet_concurrency_20_datastores():
             }
             
             res = target_tool(f"Query {task_id}", tool_context=mock_ctx)
-            return res
+            return task_id, target_binding.auth_mode, res
 
-        # Run 100 queries across 20 threads simultaneously
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
             futures = [executor.submit(execute_worker, i) for i in range(100)]
             results = [f.result() for f in concurrent.futures.as_completed(futures)]
 
         assert len(results) == 100
-        for r in results:
-            assert "Title: Doc from engine-cat-" in r
-            assert "Thread-safe enterprise search excerpt" in r
+        assert len(observed_headers) == 100
+        
+        # Verify Cat A used per-thread token, and Cat B/C used ADC token
+        for url, auth_hdr in observed_headers:
+            if "cat-a" in url:
+                assert auth_hdr.startswith("Bearer User_Token_Thread_")
+            else:
+                assert auth_hdr == "Bearer Thread_Safe_ADC_Token_888"
 
 if __name__ == "__main__":
     sys.exit(pytest.main(["-v", __file__]))

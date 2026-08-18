@@ -5,7 +5,7 @@ import logging
 import threading
 import requests
 from datetime import timezone
-from typing import Dict, Any, Optional, Callable, Tuple, Union, List
+from typing import Dict, Any, Optional, Callable, Tuple, Union, List, Literal
 from urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 
@@ -40,10 +40,14 @@ _MULTIREGION_MAP = {
 _http_session: Optional[requests.Session] = None
 _session_lock = threading.Lock()
 
-# Thread-safe ADC Token Cache for Local Developer Fallback & Service Account Queries
+# Thread-safe ADC Token Cache
 _cached_adc_token: Optional[str] = None
 _cached_adc_expiry: float = 0.0
 _adc_lock = threading.Lock()
+
+# Thread-safe STS Token Cache for Federated Tokens
+_cached_sts_tokens: Dict[str, Tuple[str, float]] = {}
+_sts_lock = threading.Lock()
 
 def _get_http_session() -> requests.Session:
     """Returns a thread-safe persistent requests.Session with connection pooling and automated backoff retries."""
@@ -109,18 +113,32 @@ def _resolve_location(location: str) -> Tuple[str, str]:
     raise ValueError(f"Invalid or unsupported Discovery Engine LOCATION: '{location}'. Allowed: {list(_ALLOWED_HOSTS.keys())}")
 
 def _resolve_host(location: str) -> str:
-    """Convenience helper returning the hostname for a given location."""
     _, host = _resolve_location(location)
     return host
 
-def _exchange_idp_token(idp_token: str, wif_audience: str, project_number: Optional[str] = None) -> str:
-    """RFC 8693 exchange: Third-party IdP token (Azure AD / Okta / Atlassian) -> Google federated access token."""
+def _exchange_idp_token(
+    idp_token: str,
+    wif_audience: str,
+    project_number: Optional[str] = None,
+    subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt"
+) -> str:
+    """RFC 8693 exchange with thread-safe caching: Third-party IdP token -> Google federated access token."""
+    global _cached_sts_tokens
+    cache_key = f"{wif_audience}:{hash(idp_token)}"
+    now = time.time()
+    
+    with _sts_lock:
+        if cache_key in _cached_sts_tokens:
+            tok, exp = _cached_sts_tokens[cache_key]
+            if now < exp:
+                return tok
+
     payload = {
         "grantType": "urn:ietf:params:oauth:grant-type:token-exchange",
         "audience": wif_audience,
         "scope": "https://www.googleapis.com/auth/cloud-platform",
         "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token",
-        "subjectTokenType": "urn:ietf:params:oauth:token-type:jwt",
+        "subjectTokenType": subject_token_type,
         "subjectToken": idp_token,
     }
     if project_number:
@@ -130,14 +148,23 @@ def _exchange_idp_token(idp_token: str, wif_audience: str, project_number: Optio
     r = session.post("https://sts.googleapis.com/v1/token", json=payload, timeout=(3.05, 10.0))
     if r.status_code != 200:
         raise PermissionError(f"STS_EXCHANGE_FAILED: {r.status_code} {r.text[:300]}")
-    return r.json()["access_token"]
+    
+    res_data = r.json()
+    access_token = res_data["access_token"]
+    expires_in = res_data.get("expires_in", 3600)
+    
+    with _sts_lock:
+        _cached_sts_tokens[cache_key] = (access_token, now + min(expires_in - 60, 3000))
+        
+    return access_token
 
 def resolve_credential(
     auth_mode: AuthMode,
     state_token: Optional[str],
     auth_name: str,
     wif_audience: Optional[str] = None,
-    wif_project_number: Optional[str] = None
+    wif_project_number: Optional[str] = None,
+    subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt"
 ) -> Tuple[Optional[str], str]:
     """Resolves authentication token based on explicit AuthMode with WIF federation support."""
     if auth_mode is AuthMode.USER_OAUTH:
@@ -151,7 +178,7 @@ def resolve_credential(
         if not wif_audience:
             return None, "WIF_AUDIENCE_MISSING"
         try:
-            federated_token = _exchange_idp_token(state_token, wif_audience, wif_project_number)
+            federated_token = _exchange_idp_token(state_token, wif_audience, wif_project_number, subject_token_type)
             return federated_token, "FEDERATED_STS"
         except Exception as err:
             logger.error(f"STS token exchange failed for '{auth_name}': {err}")
@@ -192,22 +219,26 @@ def _serialize_struct(struct: dict, display_columns: Optional[List[str]] = None)
     # 1. Prioritize display_columns allowlist if specified
     if display_columns:
         for col in display_columns:
+            if len(rows) >= 12:
+                break
             if col in struct and struct[col] not in (None, "", [], {}):
                 val_str = json.dumps(struct[col]) if isinstance(struct[col], (dict, list)) else str(struct[col])
                 rows.append(f"{col}: {val_str[:200]}")
                 
     # 2. Add remaining columns up to 12
-    for k, v in list(struct.items())[:12]:
+    for k, v in struct.items():
+        if len(rows) >= 12:
+            break
         if k in reserved or v in (None, "", [], {}):
             continue
         if display_columns and k in display_columns:
             continue
         val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
         rows.append(f"{k}: {val_str[:200]}")
-        if len(rows) >= 12:
-            break
-            
-    return " | ".join(rows)
+        
+    remaining = len(struct) - len(rows)
+    suffix = f" | [+{remaining} more fields]" if remaining > 0 else ""
+    return " | ".join(rows) + suffix
 
 _REASON_REMEDIATION = {
     "ACCESS_TOKEN_SCOPE_INSUFFICIENT": (
@@ -290,20 +321,27 @@ def execute_datastore_query(
     summarize: bool = False,
     enable_acl_probe: bool = False,
     display_columns: Optional[List[str]] = None,
+    deep_link_template: Optional[str] = None,
     wif_audience: Optional[str] = None,
     wif_project_number: Optional[str] = None,
+    subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt",
+    scopes: Optional[List[str]] = None,
+    authorization_url: Optional[str] = None,
+    token_url: Optional[str] = None,
+    resource_type: Optional[Literal["engines", "dataStores"]] = None,
+    page_size: int = 5,
+    filter_expr: Optional[str] = None,
     allow_adc_fallback: Optional[bool] = None,
+    _is_retry: bool = False
 ) -> str:
     """Core execution engine for querying a Discovery Engine datastore with multi-category auth resolution."""
     start_time = time.time()
     
-    # 0. Input Sanitization & Length Guard
     if not query or not isinstance(query, str) or not query.strip():
         return "Search Error: Please provide a valid, non-empty search query."
         
-    cleaned_query = query.strip()[:500]  # Cap query length to prevent HTTP 413
+    cleaned_query = query.strip()[:500]
     
-    # 1. Resolve Target Configuration
     target_auth_name = auth_name or os.getenv("AUTH_NAME", "enterprise_oauth")
     target_engine_id = engine_id or os.getenv("ENGINE_ID", "enterprise-datastore-engine")
     target_project_id = project_id or os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT", "default-project"))
@@ -321,7 +359,6 @@ def execute_datastore_query(
         allow_adc = os.getenv("ALLOW_ADC_FALLBACK", "false").lower() == "true"
         target_auth_mode = AuthMode.HYBRID_DEV if allow_adc else AuthMode.USER_OAUTH
         
-    # Extract session OAuth token and audit user identity
     state_token = None
     user_id = "anonymous"
     session_id = "default_session"
@@ -330,32 +367,38 @@ def execute_datastore_query(
         user_id = tool_context.state.get("user_id", tool_context.state.get("user_email", "authenticated_user"))
         session_id = tool_context.state.get("session_id", "active_session")
         
-    # 2. Resolve Credential via AuthMode
     access_token, auth_status = resolve_credential(
-        target_auth_mode, state_token, target_auth_name, wif_audience, wif_project_number
+        target_auth_mode, state_token, target_auth_name, wif_audience, wif_project_number, subject_token_type
     )
     
     if not access_token:
         if auth_status == "AUTH_REQUIRED":
-            logger.warning(f"[Security Boundary] Missing user OAuth token for '{target_auth_name}' under AuthMode.USER_OAUTH.")
-            # Trigger ADK interactive request_credential if supported by ToolContext (CUJ 2 Flow B)
+            logger.warning(f"[Security Boundary] Missing user OAuth token for '{target_auth_name}' under {target_auth_mode.value}.")
+            # Trigger ADK interactive challenge (CUJ 2 Flow B)
             if tool_context and hasattr(tool_context, "request_credential"):
                 try:
-                    tool_context.request_credential({"auth_name": target_auth_name, "datastore": target_engine_id})
-                except Exception:
-                    pass
+                    challenge_config = {
+                        "auth_name": target_auth_name,
+                        "datastore": target_engine_id,
+                        "scopes": scopes or [],
+                        "authorization_url": authorization_url,
+                        "token_url": token_url
+                    }
+                    tool_context.request_credential(challenge_config)
+                    logger.info(f"Emitted ADK interactive credential challenge for {target_auth_name}")
+                except Exception as cred_err:
+                    logger.warning(f"Unable to emit ADK credential challenge: {cred_err}")
             return "AUTH_REQUIRED: User authentication token is required to query this datastore. Please log in."
         return f"Authentication Error: Unable to acquire credentials for datastore ({auth_status})."
 
-    # 3. Construct Discovery Engine REST API Endpoint
     try:
         norm_location, host = _resolve_location(raw_location)
     except ValueError as val_err:
         logger.error(f"Location resolution failed: {val_err}")
         return f"Configuration Error: {val_err}"
 
-    resource_type = "dataStores" if "dataStore" in target_engine_id else "engines"
-    url = f"https://{host}/v1alpha/projects/{target_project_id}/locations/{norm_location}/collections/{target_collection}/{resource_type}/{target_engine_id}/servingConfigs/default_search:search"
+    res_type = resource_type or ("dataStores" if "dataStore" in target_engine_id else "engines")
+    url = f"https://{host}/v1alpha/projects/{target_project_id}/locations/{norm_location}/collections/{target_collection}/{res_type}/{target_engine_id}/servingConfigs/default_search:search"
     
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -365,7 +408,7 @@ def execute_datastore_query(
     
     payload = {
         "query": cleaned_query,
-        "pageSize": 5,
+        "pageSize": page_size,
         "spellCorrectionSpec": {"mode": "AUTO"},
         "contentSearchSpec": {
             "snippetSpec": {"maxSnippetCount": 1, "returnSnippet": True},
@@ -374,22 +417,38 @@ def execute_datastore_query(
     }
     if summarize:
         payload["contentSearchSpec"]["summarySpec"] = {"summaryResultCount": 3}
+    if filter_expr:
+        payload["filter"] = filter_expr
     
     session = _get_http_session()
     
     try:
         response = session.post(url, json=payload, headers=headers, timeout=(3.05, 10.0))
         
-        if response.status_code == 404 and resource_type == "engines":
+        if response.status_code == 404 and res_type == "engines":
             fallback_url = f"https://{host}/v1alpha/projects/{target_project_id}/locations/{norm_location}/collections/{target_collection}/dataStores/{target_engine_id}/servingConfigs/default_search:search"
             response = session.post(fallback_url, json=payload, headers=headers, timeout=(3.05, 10.0))
         
         latency_ms = int((time.time() - start_time) * 1000)
         
-        # 401 Detection
+        # 401 Handling: Retry automatically for Service Account; prompt user for User OAuth
         if response.status_code == 401:
             if auth_status in ("SERVICE_ACCOUNT", "HYBRID_DEV_ADC"):
                 _invalidate_adc_token()
+                if not _is_retry:
+                    logger.warning(f"401 on Service Account query to {target_engine_id}. Invalidating cache and retrying once.")
+                    return execute_datastore_query(
+                        query=query, tool_context=tool_context, engine_id=engine_id, auth_name=auth_name,
+                        auth_mode=auth_mode, project_id=project_id, location=location, collection=collection,
+                        category=category, summarize=summarize, enable_acl_probe=enable_acl_probe,
+                        display_columns=display_columns, deep_link_template=deep_link_template,
+                        wif_audience=wif_audience, wif_project_number=wif_project_number,
+                        subject_token_type=subject_token_type, scopes=scopes, authorization_url=authorization_url,
+                        token_url=token_url, resource_type=resource_type, page_size=page_size,
+                        filter_expr=filter_expr, allow_adc_fallback=allow_adc_fallback, _is_retry=True
+                    )
+                return "SERVICE_IDENTITY_ERROR: Service Account identity could not be verified by Discovery Engine."
+
             _, branch, remediation = _classify_error(response)
             logger.error(json.dumps({
                 "jsonPayload_marker": "ge_connector",
@@ -403,7 +462,6 @@ def execute_datastore_query(
             }))
             return "AUTH_EXPIRED: Your enterprise session authorization token has expired. Please re-authenticate."
 
-        # 403 Detection
         if response.status_code == 403:
             reason_code, branch, remediation = _classify_error(response)
             logger.error(json.dumps({
@@ -433,9 +491,9 @@ def execute_datastore_query(
         
         results = data.get("results", [])
         
-        # Zero Results with ACL Probe Diagnostic (CUJ 3 Diagnostic Feature)
+        # Zero Results with ACL Probe Diagnostic
         if not results:
-            if enable_acl_probe and target_auth_mode == AuthMode.USER_OAUTH:
+            if enable_acl_probe and target_auth_mode in (AuthMode.USER_OAUTH, AuthMode.FEDERATED):
                 sa_hits = _run_acl_probe(url, payload, target_project_id)
                 diag_branch = "BRANCH_A_USER_ACL" if sa_hits > 0 else "BRANCH_B_INDEX_OR_QUERY"
                 logger.info(json.dumps({
@@ -451,7 +509,7 @@ def execute_datastore_query(
                 }))
             return "No matching documents or records found in enterprise repository for your permission level."
             
-        # Parse Excerpts
+        # Parse Excerpts with newline cleanup
         formatted_excerpts = []
         for i, res in enumerate(results, 1):
             if not isinstance(res, dict):
@@ -463,48 +521,45 @@ def execute_datastore_query(
             raw_title = derived.get("title") or struct.get("title") or doc.get("name") or f"Record #{i}"
             raw_link = derived.get("link") or struct.get("link") or struct.get("url") or struct.get("html_url")
             
-            # Synthesize deep-link for Category C if link is missing
-            if not raw_link and category == "C":
-                raw_link = f"https://console.cloud.google.com/bigquery?project={target_project_id}"
-            elif not raw_link:
-                raw_link = "#"
+            # Synthesize template link if defined and link is absent
+            if not raw_link and deep_link_template and struct:
+                try:
+                    format_dict = {**struct, "project_id": target_project_id, "engine_id": target_engine_id}
+                    raw_link = deep_link_template.format(**format_dict)
+                except Exception:
+                    raw_link = None
             
             title = str(raw_title)[:150].strip().replace("\n", " ")
-            link = str(raw_link)[:250].strip()
-            if not (link.startswith("https://") or link.startswith("http://")):
-                link = "#"
+            link_str = ""
+            if raw_link and (str(raw_link).startswith("https://") or str(raw_link).startswith("http://")):
+                link_str = f"\nLink: {str(raw_link)[:250].strip()}"
             
             snippet_text = ""
             
-            # 1. Extractive Answers (Jira / ServiceNow / Salesforce)
             ext_answers = derived.get("extractive_answers") or []
             if ext_answers and isinstance(ext_answers, list) and isinstance(ext_answers[0], dict):
                 snippet_text = ext_answers[0].get("content") or ""
                 
-            # 2. Extractive Segments
             if not snippet_text:
                 ext_segments = derived.get("extractive_segments") or []
                 if ext_segments and isinstance(ext_segments, list) and isinstance(ext_segments[0], dict):
                     snippet_text = ext_segments[0].get("content") or ""
                     
-            # 3. Standard Snippets
             if not snippet_text:
                 snippets = derived.get("snippets") or []
                 if snippets and isinstance(snippets, list) and isinstance(snippets[0], dict):
                     snippet_text = snippets[0].get("snippet") or ""
                     
-            # 4. Category C Structured Data Parsing with display_columns priority
             if not snippet_text and struct:
                 snippet_text = _serialize_struct(struct, display_columns)
                 
-            # 5. Fallback Description
             if not snippet_text:
                 snippet_text = struct.get("description") or "No preview available."
                 
-            raw_snippet = str(snippet_text).strip()
-            truncated_snippet = raw_snippet[:1000].strip() + ("..." if len(raw_snippet) > 1000 else "")
+            clean_snippet = str(snippet_text).strip().replace("\n", " ")
+            truncated_snippet = clean_snippet[:1000].strip() + ("..." if len(clean_snippet) > 1000 else "")
             
-            formatted_excerpts.append(f"[{i}] Title: {title}\nLink: {link}\nExcerpt: {truncated_snippet}\n")
+            formatted_excerpts.append(f"[{i}] Title: {title}{link_str}\nExcerpt: {truncated_snippet}\n")
             
         logger.info(json.dumps({
             "jsonPayload_marker": "ge_connector",
@@ -547,8 +602,16 @@ def create_enterprise_datastore_tool(
     summarize: bool = False,
     enable_acl_probe: bool = False,
     display_columns: Optional[List[str]] = None,
+    deep_link_template: Optional[str] = None,
     wif_audience: Optional[str] = None,
     wif_project_number: Optional[str] = None,
+    subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt",
+    scopes: Optional[List[str]] = None,
+    authorization_url: Optional[str] = None,
+    token_url: Optional[str] = None,
+    resource_type: Optional[Literal["engines", "dataStores"]] = None,
+    page_size: int = 5,
+    filter_expr: Optional[str] = None,
     project_id: Optional[str] = None,
     allow_adc_fallback: Optional[bool] = None,
 ) -> Callable:
@@ -571,8 +634,16 @@ def create_enterprise_datastore_tool(
             summarize=summarize,
             enable_acl_probe=enable_acl_probe,
             display_columns=display_columns,
+            deep_link_template=deep_link_template,
             wif_audience=wif_audience,
             wif_project_number=wif_project_number,
+            subject_token_type=subject_token_type,
+            scopes=scopes,
+            authorization_url=authorization_url,
+            token_url=token_url,
+            resource_type=resource_type,
+            page_size=page_size,
+            filter=filter_expr,
             project_id=project_id
         )
 
@@ -593,8 +664,16 @@ def create_enterprise_datastore_tool(
             summarize=binding.summarize,
             enable_acl_probe=binding.enable_acl_probe,
             display_columns=binding.display_columns,
+            deep_link_template=binding.deep_link_template,
             wif_audience=binding.wif_audience,
             wif_project_number=binding.wif_project_number,
+            subject_token_type=binding.subject_token_type,
+            scopes=binding.scopes,
+            authorization_url=binding.authorization_url,
+            token_url=binding.token_url,
+            resource_type=binding.resource_type,
+            page_size=binding.page_size,
+            filter_expr=binding.filter,
         )
 
     custom_datastore_tool.__name__ = tool_name

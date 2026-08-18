@@ -135,7 +135,8 @@ def test_federated_sts_token_exchange():
         mock_sts.assert_called_once_with(
             "Mock_Azure_AD_JWT_Token",
             "//iam.googleapis.com/locations/global/workforcePools/p/providers/azure",
-            "123456789"
+            "123456789",
+            "urn:ietf:params:oauth:token-type:jwt"
         )
         args, kwargs = mock_post.call_args
         assert kwargs["headers"]["Authorization"] == "Bearer Federated_Google_Bearer_Token_999"

@@ -21,8 +21,11 @@ datastores:
     auth_name: "sharepoint_oauth"
     auth_mode: "USER_OAUTH"
     category: "A"
+    idp_provider: "GOOGLE"
     description: "Searches Microsoft SharePoint documents using user OAuth token ACL propagation."
     enable_acl_probe: true
+    scopes:
+      - "https://www.googleapis.com/auth/cloud-platform"
 
   # Category B: Third-Party / SaaS Org-Wide Datastore (Slack Workspace)
   - tool_name: "search_slack"
@@ -31,6 +34,7 @@ datastores:
     auth_mode: "SERVICE_ACCOUNT"
     category: "B"
     description: "Searches company-wide Slack channel conversations and message history."
+    resource_type: "engines"
 
   # Category C: GCP Native / Database Datastore (BigQuery Structured Records)
   - tool_name: "search_bigquery_analytics"
@@ -38,16 +42,21 @@ datastores:
     auth_mode: "SERVICE_ACCOUNT"
     category: "C"
     description: "Searches internal enterprise BigQuery data warehouses and analytics tables."
+    display_columns:
+      - "customer_id"
+      - "region"
+      - "q3_revenue"
+      - "product_line"
+    deep_link_template: "https://console.cloud.google.com/bigquery?project={project_id}"
 
-# Authorization Configuration Example (Veer Muchandi ACL Pattern)
+# Authorization Configuration (Veer Muchandi ACL Pattern)
 # Dynamically injects session OAuth tokens into ToolContext.state[auth_name]
 authorizationConfig:
   oauthClient:
     name: "sharepoint_oauth"
-    provider: "AZURE_AD" # Supports AZURE_AD, ATLASSIAN, GOOGLE, SALESFORCE, SERVICENOW
+    provider: "GOOGLE"
     scopes:
-      - "Files.Read.All"
-      - "Sites.Read.All"
+      - "https://www.googleapis.com/auth/cloud-platform"
 
   # Session State Injection Mapping
   stateInjection:

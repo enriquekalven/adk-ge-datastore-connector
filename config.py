@@ -3,7 +3,7 @@ import re
 import yaml
 import logging
 from enum import Enum
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,6 @@ class AuthMode(str, Enum):
     FEDERATED = "FEDERATED"             # Category A/B with Third-party IdP token + STS / WIF exchange
     HYBRID_DEV = "HYBRID_DEV"           # Localhost developer mode only (falls back to ADC if token missing)
 
-# Managed production runtimes where HYBRID_DEV is strictly blocked
 _MANAGED_ENV_VARS = (
     "GOOGLE_CLOUD_AGENT_ENGINE_ID",
     "K_SERVICE",
@@ -35,16 +34,22 @@ class DatastoreBinding(BaseModel):
     category: str = Field(default="A", description="Connector category (A: User ACL, B: SaaS Org-Wide, C: GCP Native/DB)")
     location: str = Field(default="global", description="GCP Location (global, us, eu, us-central1, etc.)")
     collection: str = Field(default="default_collection", description="Discovery Engine Collection ID")
+    resource_type: Optional[Literal["engines", "dataStores"]] = Field(default=None, description="Explicit resource type in REST path")
     description: str = Field(default="", description="Description of the tool for the LLM")
     summarize: bool = Field(default=False, description="Whether to request backend Discovery Engine summary")
     enable_acl_probe: bool = Field(default=False, description="Enable background SA probe on 0-hits to diagnose User ACL vs Index Sync")
     project_id: Optional[str] = Field(default=None, description="GCP Project ID override")
     display_columns: Optional[List[str]] = Field(default=None, description="Ordered allowlist of columns for Category C serialization")
+    deep_link_template: Optional[str] = Field(default=None, description="Template URL for synthesizing deep-links from struct data")
+    idp_provider: Optional[str] = Field(default=None, description="Identity Provider name (e.g. GOOGLE, AZURE_AD, OKTA, ATLASSIAN)")
     wif_audience: Optional[str] = Field(default=None, description="Workforce Identity Federation audience URI for STS token exchange")
     wif_project_number: Optional[str] = Field(default=None, description="GCP Project Number for STS userProject context")
+    subject_token_type: str = Field(default="urn:ietf:params:oauth:token-type:jwt", description="STS subject token type")
     authorization_url: Optional[str] = Field(default=None, description="OAuth2 authorization endpoint for Flow B interactive challenge")
     token_url: Optional[str] = Field(default=None, description="OAuth2 token endpoint for Flow B interactive challenge")
     scopes: Optional[List[str]] = Field(default=None, description="List of OAuth scopes required for this datastore")
+    page_size: int = Field(default=5, ge=1, le=50, description="Max number of search results to retrieve")
+    filter: Optional[str] = Field(default=None, description="Discovery Engine filter expression (e.g. branch: main)")
 
     @field_validator("tool_name")
     @classmethod
@@ -72,8 +77,8 @@ class DatastoreBinding(BaseModel):
         return self
 
 class AgentManifestSchema(BaseModel):
-    """Schema validation for the full agent.yaml manifest."""
-    model_config = ConfigDict(extra="ignore")
+    """Schema validation for the full agent.yaml manifest with strict extra-field rejection."""
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="enterprise_knowledge_agent")
     display_name: Optional[str] = None
@@ -84,32 +89,63 @@ class AgentManifestSchema(BaseModel):
     datastores: Optional[List[DatastoreBinding]] = None
     authorizationConfig: Optional[Dict[str, Any]] = None
 
+    @model_validator(mode="after")
+    def validate_referential_integrity(self) -> "AgentManifestSchema":
+        if self.authorizationConfig and self.datastores:
+            injections = self.authorizationConfig.get("stateInjection", [])
+            if isinstance(injections, list):
+                valid_target_keys = {
+                    inj.get("targetKey") for inj in injections if isinstance(inj, dict) and inj.get("targetKey")
+                }
+                if valid_target_keys:
+                    for b in self.datastores:
+                        if b.auth_mode in (AuthMode.USER_OAUTH, AuthMode.FEDERATED) and b.auth_name not in valid_target_keys:
+                            logger.warning(
+                                f"Referential Warning: Datastore '{b.tool_name}' expects auth_name='{b.auth_name}', "
+                                f"but authorizationConfig.stateInjection only supplies {list(valid_target_keys)}."
+                            )
+        return self
+
 def is_managed_runtime() -> bool:
     """Returns True if running in a managed cloud runtime (Agent Engine, Cloud Run, GAE)."""
     return any(bool(os.getenv(v)) for v in _MANAGED_ENV_VARS)
 
-def load_bindings(yaml_path: str = "agent.yaml") -> List[DatastoreBinding]:
+def load_bindings(yaml_path: Optional[str] = None) -> List[DatastoreBinding]:
     """Loads and validates datastore bindings from agent.yaml manifest with strict Pydantic validation."""
+    if yaml_path is None:
+        default_dir = os.path.dirname(os.path.abspath(__file__))
+        yaml_path = os.getenv("AGENT_MANIFEST_PATH", os.path.join(default_dir, "agent.yaml"))
+
     bindings: List[DatastoreBinding] = []
     
-    # 1. Attempt to load declarative datastores from agent.yaml
     if os.path.exists(yaml_path):
         with open(yaml_path, "r", encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
 
+        if raw_data and "datastores" not in raw_data and not raw_data.get("datastores"):
+            raise ValueError(f"Manifest '{yaml_path}' defines no 'datastores:' configuration list. Refusing silent fallback.")
+
         try:
-            # Validate whole manifest structure
             manifest = AgentManifestSchema.model_validate(raw_data)
             global_env = manifest.env or {}
             
+            # Export env block to os.environ so MODEL_NAME, etc. are accessible
+            for k, v in global_env.items():
+                if k not in os.environ and v is not None:
+                    os.environ[k] = str(v)
+            
             if manifest.datastores:
                 for b in manifest.datastores:
-                    # Inherit global env values if not explicitly set on binding
-                    updated = b.model_copy(update={
-                        "location": b.location if b.location != "global" else global_env.get("LOCATION", "global"),
-                        "collection": b.collection if b.collection != "default_collection" else global_env.get("COLLECTION", "default_collection"),
-                        "project_id": b.project_id or global_env.get("PROJECT_ID")
-                    })
+                    fields_set = b.model_fields_set
+                    updates = {}
+                    if "location" not in fields_set and "LOCATION" in global_env:
+                        updates["location"] = global_env["LOCATION"]
+                    if "collection" not in fields_set and "COLLECTION" in global_env:
+                        updates["collection"] = global_env["COLLECTION"]
+                    if "project_id" not in fields_set and "PROJECT_ID" in global_env:
+                        updates["project_id"] = global_env["PROJECT_ID"]
+                    
+                    updated = b.model_copy(update=updates) if updates else b
                     bindings.append(updated)
         except ValidationError as val_err:
             logger.error(f"Manifest validation error in {yaml_path}:\n{val_err}")
@@ -118,7 +154,6 @@ def load_bindings(yaml_path: str = "agent.yaml") -> List[DatastoreBinding]:
             logger.error(f"Error reading {yaml_path}: {err}")
             raise
 
-    # 2. Fallback to Environment Variables if no YAML bindings defined
     if not bindings:
         raw_mode = os.getenv("AUTH_MODE")
         if raw_mode:

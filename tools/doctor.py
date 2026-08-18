@@ -10,7 +10,7 @@ from google.auth.transport import requests as auth_requests
 
 logging.basicConfig(level=logging.WARNING)
 
-def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_output: bool = False):
+def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_output: bool = False) -> bool:
     """Runs comprehensive health and diagnostic checks across all datastores."""
     report = {
         "manifest_path": yaml_path,
@@ -41,7 +41,10 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
     except Exception as e:
         report["manifest_valid"] = False
         report["overall_status"] = "FAIL"
-        if not json_output:
+        report["error"] = str(e)
+        if json_output:
+            print(json.dumps(report, indent=2))
+        else:
             print(f"  ❌ Manifest Validation Error: {e}")
         return False
 
@@ -90,7 +93,7 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
     # 4. Probe Datastore Endpoints
     if not json_output:
         print("\n[4/4] Probing Datastore Endpoints & Permissions...")
-    all_ok = True
+    all_ok = (report["overall_status"] == "PASS")
     session = _get_http_session()
 
     for b in bindings:
@@ -108,10 +111,9 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
         try:
             norm_loc, host = _resolve_location(b.location)
             target_proj = b.project_id or project_id or "default-project"
-            resource_type = "dataStores" if "dataStore" in b.engine_id else "engines"
-            url = f"https://{host}/v1alpha/projects/{target_proj}/locations/{norm_loc}/collections/{b.collection}/{resource_type}/{b.engine_id}/servingConfigs/default_search:search"
+            res_type = b.resource_type or ("dataStores" if "dataStore" in b.engine_id else "engines")
+            url = f"https://{host}/v1alpha/projects/{target_proj}/locations/{norm_loc}/collections/{b.collection}/{res_type}/{b.engine_id}/servingConfigs/default_search:search"
             
-            # Choose token: test_token if passed, else adc_token
             probe_token = test_token if (b.auth_mode == AuthMode.USER_OAUTH and test_token) else adc_token
             if not probe_token:
                 if b.auth_mode == AuthMode.USER_OAUTH:
@@ -122,8 +124,9 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
                         print(f"  ℹ️  {msg}")
                 else:
                     msg = "No ADC token available to issue live HTTP probe. Skipping."
-                    binding_report["status"] = "WARN"
+                    binding_report["status"] = "FAIL"
                     binding_report["message"] = msg
+                    all_ok = False
                     if not json_output:
                         print(f"  ⚠️  {msg}")
                 report["bindings"].append(binding_report)
@@ -146,32 +149,36 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
                     print(f"  ✅ [PASS] Endpoint reachable and authorized (Status 200 OK)")
             elif resp.status_code == 403:
                 reason, branch, remediation = _classify_error(resp)
-                binding_report["status"] = "PASS" if (b.auth_mode == AuthMode.USER_OAUTH and not test_token) else "FAIL"
                 binding_report["branch"] = branch
                 binding_report["reason"] = reason
                 binding_report["remediation"] = remediation
-                if not json_output:
-                    print(f"  ⚠️  [STATUS 403] Diagnostic Classification: {branch}")
-                    print(f"     Reason: {reason}")
-                    print(f"     Remediation: {remediation}")
-                    if b.auth_mode == AuthMode.USER_OAUTH and not test_token:
-                        print("     Note: For Category A (USER_OAUTH), 403 under ADC probe is expected because end-user token is required.")
-                    else:
-                        all_ok = False
+                if b.auth_mode == AuthMode.USER_OAUTH and not test_token:
+                    binding_report["status"] = "PASS"
+                    binding_report["message"] = "Expected 403 under ADC probe for Category A (End-user token required)."
+                    if not json_output:
+                        print(f"  ℹ️  [STATUS 403] Expected: Category A requires end-user token. Diagnostic Classification: {branch}")
+                else:
+                    binding_report["status"] = "FAIL"
+                    binding_report["message"] = f"Forbidden: {remediation}"
+                    all_ok = False
+                    if not json_output:
+                        print(f"  ❌ [STATUS 403] Diagnostic Classification: {branch}")
+                        print(f"     Reason: {reason}")
+                        print(f"     Remediation: {remediation}")
             elif resp.status_code == 404:
                 msg = f"404 Not Found. Verify ENGINE_ID='{b.engine_id}', COLLECTION='{b.collection}', LOCATION='{b.location}'."
                 binding_report["status"] = "FAIL"
                 binding_report["message"] = msg
+                all_ok = False
                 if not json_output:
                     print(f"  ❌ [FAIL] {msg}")
-                all_ok = False
             elif resp.status_code == 401:
                 msg = "401 Unauthorized. Token expired or invalid audience."
                 binding_report["status"] = "FAIL"
                 binding_report["message"] = msg
+                all_ok = False
                 if not json_output:
                     print(f"  ❌ [FAIL] {msg}")
-                all_ok = False
             else:
                 msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
                 binding_report["status"] = "WARN"
@@ -181,9 +188,9 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
         except Exception as err:
             binding_report["status"] = "ERROR"
             binding_report["message"] = str(err)
+            all_ok = False
             if not json_output:
                 print(f"  ❌ [ERROR] Probe failed: {err}")
-            all_ok = False
             
         report["bindings"].append(binding_report)
 
@@ -208,4 +215,5 @@ if __name__ == "__main__":
     parser.add_argument("--json", action="store_true", help="Output diagnostic results as JSON")
     args = parser.parse_args()
     
-    run_diagnostics(args.manifest, test_token=args.token, json_output=args.json)
+    success = run_diagnostics(args.manifest, test_token=args.token, json_output=args.json)
+    sys.exit(0 if success else 1)
