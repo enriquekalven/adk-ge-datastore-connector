@@ -1,9 +1,10 @@
 import os
+import re
 import yaml
 import logging
 from enum import Enum
-from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +12,7 @@ class AuthMode(str, Enum):
     """Authentication mode for Gemini Enterprise datastore connectors."""
     USER_OAUTH = "USER_OAUTH"           # Category A: Strict fail-closed user token propagation
     SERVICE_ACCOUNT = "SERVICE_ACCOUNT" # Category B & C: Org-wide / IAM ADC search (e.g. Slack, BigQuery, GCS)
+    FEDERATED = "FEDERATED"             # Category A/B with Third-party IdP token + STS / WIF exchange
     HYBRID_DEV = "HYBRID_DEV"           # Localhost developer mode only (falls back to ADC if token missing)
 
 # Managed production runtimes where HYBRID_DEV is strictly blocked
@@ -22,69 +24,99 @@ _MANAGED_ENV_VARS = (
     "AGENT_RUNTIME_ENV"
 )
 
-@dataclass
-class DatastoreBinding:
-    """Declarative binding configuration for an enterprise datastore."""
-    tool_name: str
-    engine_id: str
-    auth_name: str = "enterprise_oauth"
-    auth_mode: AuthMode = AuthMode.USER_OAUTH
-    category: str = "A"
-    location: str = "global"
-    collection: str = "default_collection"
-    description: str = ""
-    summarize: bool = False
-    enable_acl_probe: bool = False
-    project_id: Optional[str] = None
+class DatastoreBinding(BaseModel):
+    """Declarative binding configuration for an enterprise datastore with strict Pydantic validation."""
+    model_config = ConfigDict(extra="forbid")
 
-    def __post_init__(self):
-        if isinstance(self.auth_mode, str):
-            self.auth_mode = AuthMode(self.auth_mode)
+    tool_name: str = Field(..., description="Unique Python function name for ADK tool registration")
+    engine_id: str = Field(..., description="Discovery Engine Engine ID or DataStore ID")
+    auth_name: str = Field(default="enterprise_oauth", description="ToolContext.state key storing session OAuth token")
+    auth_mode: AuthMode = Field(default=AuthMode.USER_OAUTH, description="Auth mode (USER_OAUTH, SERVICE_ACCOUNT, FEDERATED, HYBRID_DEV)")
+    category: str = Field(default="A", description="Connector category (A: User ACL, B: SaaS Org-Wide, C: GCP Native/DB)")
+    location: str = Field(default="global", description="GCP Location (global, us, eu, us-central1, etc.)")
+    collection: str = Field(default="default_collection", description="Discovery Engine Collection ID")
+    description: str = Field(default="", description="Description of the tool for the LLM")
+    summarize: bool = Field(default=False, description="Whether to request backend Discovery Engine summary")
+    enable_acl_probe: bool = Field(default=False, description="Enable background SA probe on 0-hits to diagnose User ACL vs Index Sync")
+    project_id: Optional[str] = Field(default=None, description="GCP Project ID override")
+    display_columns: Optional[List[str]] = Field(default=None, description="Ordered allowlist of columns for Category C serialization")
+    wif_audience: Optional[str] = Field(default=None, description="Workforce Identity Federation audience URI for STS token exchange")
+    wif_project_number: Optional[str] = Field(default=None, description="GCP Project Number for STS userProject context")
+    authorization_url: Optional[str] = Field(default=None, description="OAuth2 authorization endpoint for Flow B interactive challenge")
+    token_url: Optional[str] = Field(default=None, description="OAuth2 token endpoint for Flow B interactive challenge")
+    scopes: Optional[List[str]] = Field(default=None, description="List of OAuth scopes required for this datastore")
+
+    @field_validator("tool_name")
+    @classmethod
+    def validate_tool_name(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z0-9_]+$", v):
+            raise ValueError(f"tool_name '{v}' must be alphanumeric with underscores only (valid Python identifier).")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        clean = v.upper().strip()
+        if clean not in ("A", "B", "C"):
+            raise ValueError(f"category must be 'A', 'B', or 'C' (got '{v}').")
+        return clean
+
+    @model_validator(mode="after")
+    def validate_auth_dependencies(self) -> "DatastoreBinding":
+        if self.auth_mode == AuthMode.USER_OAUTH and not self.auth_name:
+            raise ValueError(f"Datastore '{self.tool_name}' in USER_OAUTH mode requires non-empty 'auth_name'.")
+        if self.auth_mode == AuthMode.FEDERATED and not (self.wif_audience or self.wif_project_number):
+            raise ValueError(f"Datastore '{self.tool_name}' in FEDERATED mode requires 'wif_audience' or 'wif_project_number'.")
         if not self.description:
             self.description = f"Searches the '{self.engine_id}' enterprise datastore (Category {self.category})."
+        return self
+
+class AgentManifestSchema(BaseModel):
+    """Schema validation for the full agent.yaml manifest."""
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(default="enterprise_knowledge_agent")
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    version: Optional[str] = None
+    entrypoint: Optional[str] = None
+    env: Optional[Dict[str, Any]] = None
+    datastores: Optional[List[DatastoreBinding]] = None
+    authorizationConfig: Optional[Dict[str, Any]] = None
 
 def is_managed_runtime() -> bool:
     """Returns True if running in a managed cloud runtime (Agent Engine, Cloud Run, GAE)."""
     return any(bool(os.getenv(v)) for v in _MANAGED_ENV_VARS)
 
 def load_bindings(yaml_path: str = "agent.yaml") -> List[DatastoreBinding]:
-    """Loads datastore bindings from agent.yaml manifest, falling back to environment variables."""
+    """Loads and validates datastore bindings from agent.yaml manifest with strict Pydantic validation."""
     bindings: List[DatastoreBinding] = []
     
     # 1. Attempt to load declarative datastores from agent.yaml
     if os.path.exists(yaml_path):
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            raw_data = yaml.safe_load(f) or {}
+
         try:
-            with open(yaml_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-                
-            raw_datastores = data.get("datastores", [])
-            if raw_datastores and isinstance(raw_datastores, list):
-                for d in raw_datastores:
-                    if not isinstance(d, dict):
-                        continue
-                    mode_str = d.get("auth_mode", "USER_OAUTH").upper()
-                    try:
-                        auth_mode = AuthMode(mode_str)
-                    except ValueError:
-                        logger.warning(f"Unknown auth_mode '{mode_str}' for {d.get('tool_name')}, defaulting to USER_OAUTH")
-                        auth_mode = AuthMode.USER_OAUTH
-                        
-                    binding = DatastoreBinding(
-                        tool_name=d.get("tool_name", f"search_{d.get('engine_id', 'datastore').replace('-', '_')}"),
-                        engine_id=d.get("engine_id", "enterprise-datastore-engine"),
-                        auth_name=d.get("auth_name", "enterprise_oauth"),
-                        auth_mode=auth_mode,
-                        category=str(d.get("category", "A")),
-                        location=d.get("location", data.get("env", {}).get("LOCATION", "global")),
-                        collection=d.get("collection", data.get("env", {}).get("COLLECTION", "default_collection")),
-                        description=d.get("description", ""),
-                        summarize=bool(d.get("summarize", False)),
-                        enable_acl_probe=bool(d.get("enable_acl_probe", False)),
-                        project_id=d.get("project_id", data.get("env", {}).get("PROJECT_ID"))
-                    )
-                    bindings.append(binding)
+            # Validate whole manifest structure
+            manifest = AgentManifestSchema.model_validate(raw_data)
+            global_env = manifest.env or {}
+            
+            if manifest.datastores:
+                for b in manifest.datastores:
+                    # Inherit global env values if not explicitly set on binding
+                    updated = b.model_copy(update={
+                        "location": b.location if b.location != "global" else global_env.get("LOCATION", "global"),
+                        "collection": b.collection if b.collection != "default_collection" else global_env.get("COLLECTION", "default_collection"),
+                        "project_id": b.project_id or global_env.get("PROJECT_ID")
+                    })
+                    bindings.append(updated)
+        except ValidationError as val_err:
+            logger.error(f"Manifest validation error in {yaml_path}:\n{val_err}")
+            raise ValueError(f"Strict validation failed for {yaml_path}:\n{val_err}") from val_err
         except Exception as err:
-            logger.error(f"Error parsing {yaml_path}: {err}. Falling back to env vars.")
+            logger.error(f"Error reading {yaml_path}: {err}")
+            raise
 
     # 2. Fallback to Environment Variables if no YAML bindings defined
     if not bindings:
@@ -107,7 +139,7 @@ def load_bindings(yaml_path: str = "agent.yaml") -> List[DatastoreBinding]:
             location=os.getenv("LOCATION", "global"),
             collection=os.getenv("COLLECTION", "default_collection"),
             description="Universal enterprise search tool using user OAuth ACL token propagation.",
-            project_id=os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT"))
+            project_id=os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT", "default-project"))
         )
         bindings.append(default_binding)
 

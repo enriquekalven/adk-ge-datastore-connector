@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adk-ge-datastore-connector"
+version = "1.0.0"
+description = "Universal ADK Connector Bridge for Gemini Enterprise Datastores with Multi-Category OAuth/ACL Token Propagation"
+authors = [{ name = "Enrique Kalven" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-adk>=2.0.0",
+    "google-auth>=2.27.0",
+    "requests>=2.31.0",
+    "urllib3>=2.0.0",
+    "pydantic>=2.6.0",
+    "pyyaml>=6.0.1"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = "test_*.py"

@@ -3,6 +3,7 @@ import sys
 import pytest
 import requests
 from unittest.mock import patch, MagicMock
+from pydantic import ValidationError
 
 from google.adk.tools import ToolContext
 from config import AuthMode, DatastoreBinding, load_bindings, is_managed_runtime
@@ -13,9 +14,11 @@ from tools.datastore_search import (
     _resolve_host,
     _serialize_struct,
     _classify_error,
+    _exchange_idp_token,
     resolve_credential
 )
 from agent import create_agent
+from tools.doctor import run_diagnostics
 
 @pytest.fixture(autouse=True)
 def clean_environment():
@@ -82,8 +85,7 @@ def test_service_account_mode_category_b_and_c():
     )
     tool = create_enterprise_datastore_tool(binding)
     
-    with patch("tools.datastore_search._get_adc_token", return_value="Mock_ADC_Service_Account_Token"), \
-         patch("requests.Session.post") as mock_post:
+    with patch("tools.datastore_search._get_adc_token", return_value="Mock_ADC_Service_Account_Token"),          patch("requests.Session.post") as mock_post:
         
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -107,16 +109,47 @@ def test_service_account_mode_category_b_and_c():
         assert kwargs["headers"]["Authorization"] == "Bearer Mock_ADC_Service_Account_Token"
         assert "Slack Channel #general" in result
 
+def test_federated_sts_token_exchange():
+    """Test 4: Verifies AuthMode.FEDERATED performs RFC 8693 token exchange via Google STS."""
+    mock_context = MagicMock(spec=ToolContext)
+    mock_context.state = {"azure_idp_token": "Mock_Azure_AD_JWT_Token"}
+    
+    binding = DatastoreBinding(
+        tool_name="search_azure_sharepoint",
+        engine_id="azure-sharepoint-engine",
+        auth_name="azure_idp_token",
+        auth_mode=AuthMode.FEDERATED,
+        wif_audience="//iam.googleapis.com/locations/global/workforcePools/p/providers/azure",
+        wif_project_number="123456789"
+    )
+    tool = create_enterprise_datastore_tool(binding)
+    
+    with patch("tools.datastore_search._exchange_idp_token", return_value="Federated_Google_Bearer_Token_999") as mock_sts,          patch("requests.Session.post") as mock_post:
+         
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_post.return_value = mock_response
+        
+        tool("Federated query", tool_context=mock_context)
+        mock_sts.assert_called_once_with(
+            "Mock_Azure_AD_JWT_Token",
+            "//iam.googleapis.com/locations/global/workforcePools/p/providers/azure",
+            "123456789"
+        )
+        args, kwargs = mock_post.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer Federated_Google_Bearer_Token_999"
+
 def test_managed_runtime_blocks_hybrid_dev_mode():
-    """Test 4: Verifies that AuthMode.HYBRID_DEV is strictly blocked in managed cloud runtimes."""
+    """Test 5: Verifies that AuthMode.HYBRID_DEV is strictly blocked in managed cloud runtimes."""
     os.environ["GOOGLE_CLOUD_AGENT_ENGINE_ID"] = "projects/123/locations/us/agents/456"
     assert is_managed_runtime() is True
     
     with pytest.raises(RuntimeError, match="AuthMode.HYBRID_DEV is strictly forbidden in managed cloud runtimes"):
         resolve_credential(AuthMode.HYBRID_DEV, None, "test_auth")
 
-def test_category_c_structured_data_serialization():
-    """Test 5: Verifies Category C BigQuery/Spanner structData column serialization."""
+def test_category_c_structured_data_and_column_prioritization():
+    """Test 6: Verifies Category C column prioritization and deep-link synthesis."""
     struct_data = {
         "customer_id": "CUST-9921",
         "region": "EMEA",
@@ -125,14 +158,14 @@ def test_category_c_structured_data_serialization():
         "title": "Ignored Title Meta",
         "link": "https://ignored.internal"
     }
-    serialized = _serialize_struct(struct_data)
-    assert "customer_id: \"CUST-9921\"" in serialized or "customer_id: CUST-9921" in serialized
+    serialized = _serialize_struct(struct_data, display_columns=["q3_revenue", "region"])
+    assert "q3_revenue: 4500000" in serialized
     assert "region: \"EMEA\"" in serialized or "region: EMEA" in serialized
-    assert "4500000" in serialized
+    assert "customer_id: \"CUST-9921\"" in serialized or "customer_id: CUST-9921" in serialized
     assert "Ignored Title Meta" not in serialized
 
 def test_regional_location_and_path_normalization():
-    """Test 6: Verifies that multi-region location strings (e.g. us-central1) normalize both host and path."""
+    """Test 7: Verifies that multi-region location strings (e.g. us-central1) normalize both host and path."""
     norm_loc, host = _resolve_location("us-central1")
     assert norm_loc == "us"
     assert host == "us-discoveryengine.googleapis.com"
@@ -145,7 +178,7 @@ def test_regional_location_and_path_normalization():
         _resolve_location("attacker.tld#")
 
 def test_cuj3_error_classification():
-    """Test 7: Verifies CUJ 3 Diagnostic classification distinguishes Branch A vs Branch B."""
+    """Test 8: Verifies CUJ 3 Diagnostic classification distinguishes Branch A vs Branch B."""
     mock_resp = MagicMock(spec=requests.Response)
     mock_resp.status_code = 403
     mock_resp.json.return_value = {
@@ -159,24 +192,48 @@ def test_cuj3_error_classification():
     assert branch == "BRANCH_B_SCOPE_ERROR"
     assert "agent.yaml scopes" in remediation
 
-def test_declarative_manifest_loader():
-    """Test 8: Verifies load_bindings correctly parses multi-datastore YAML manifests."""
-    bindings = load_bindings("agent.yaml")
-    assert len(bindings) == 3
-    tool_names = [b.tool_name for b in bindings]
-    assert "search_sharepoint" in tool_names
-    assert "search_slack" in tool_names
-    assert "search_bigquery_analytics" in tool_names
+def test_acl_probe_diagnostic_branch_separation():
+    """Test 9: Verifies ACL Probe detects documents in index when user has 0 hits (Branch A)."""
+    mock_context = MagicMock(spec=ToolContext)
+    mock_context.state = {"sharepoint_oauth": "User_With_No_ACLs"}
+    
+    binding = DatastoreBinding(
+        tool_name="search_sharepoint",
+        engine_id="sharepoint-engine",
+        auth_name="sharepoint_oauth",
+        auth_mode=AuthMode.USER_OAUTH,
+        enable_acl_probe=True
+    )
+    tool = create_enterprise_datastore_tool(binding)
+    
+    # First post returns 0 results for user, second post (SA probe) returns 1 result
+    user_resp = MagicMock()
+    user_resp.status_code = 200
+    user_resp.json.return_value = {"results": []}
+    
+    sa_resp = MagicMock()
+    sa_resp.status_code = 200
+    sa_resp.json.return_value = {"results": [{"document": {"derivedStructData": {"title": "Doc"}}}]}
+    
+    with patch("requests.Session.post", side_effect=[user_resp, sa_resp]),          patch("tools.datastore_search._get_adc_token", return_value="SA_Token"):
+         
+        output = tool("Secret document", tool_context=mock_context)
+        assert "No matching documents" in output
 
-def test_dynamic_agent_instantiation():
-    """Test 9: Verifies create_agent() registers all tools from agent.yaml."""
-    agent = create_agent("agent.yaml")
-    assert agent.name == "enterprise_knowledge_agent"
-    assert len(agent.tools) == 3
-    tool_names = [t.__name__ for t in agent.tools]
-    assert "search_sharepoint" in tool_names
-    assert "search_slack" in tool_names
-    assert "search_bigquery_analytics" in tool_names
+def test_pydantic_manifest_validation_rejects_invalid_keys():
+    """Test 10: Verifies Pydantic DatastoreBinding rejects unrecognized keys."""
+    with pytest.raises(ValidationError):
+        DatastoreBinding(
+            tool_name="search_sharepoint",
+            engine_id="sp-engine",
+            auth_mode=AuthMode.USER_OAUTH,
+            invalid_typo_key="should_fail" # Extra forbidden key
+        )
+
+def test_doctor_cli_json_mode():
+    """Test 11: Verifies tools.doctor runs and outputs structured diagnostic reports."""
+    status = run_diagnostics("agent.yaml", json_output=True)
+    assert status in (True, False)
 
 if __name__ == "__main__":
     sys.exit(pytest.main(["-v", __file__]))

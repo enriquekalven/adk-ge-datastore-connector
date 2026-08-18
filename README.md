@@ -137,42 +137,87 @@ sequenceDiagram
 
 ```text
 adk-ge-datastore-connector/
-├── README.md                  # System documentation and deployment guide
-├── .gitignore                 # Exclusion rules
-├── requirements.txt           # Core dependencies (google-adk, google-auth, requests)
-├── agent.py                   # ADK RootAgent definition and instructions
-├── agent.yaml                 # Deployment manifest and authorization bindings
-├── test_agent.py              # Multi-connector automated test suite
+├── README.md                      # Architecture documentation and deployment guide
+├── pyproject.toml                 # Pinned project packaging and dependencies
+├── .env.example                   # Environment variable template
+├── agent.py                       # ADK RootAgent dynamically loading datastores from manifest
+├── agent.yaml                     # Declarative multi-datastore manifest with AuthMode bindings
+├── config.py                      # Pydantic schema validation and DatastoreBinding loader
 ├── tools/
-│   ├── __init__.py            # Tools package initialization
-│   └── datastore_search.py    # Search tool with session OAuth propagation
-└── ae_experiment/             # AlphaEvolve optimization suite
-    ├── initial_program.py     # EVOLVE-BLOCK rerank seed program
-    ├── evaluator.py           # 3-tier benchmark evaluator
-    └── benchmark_data.json    # Search query evaluation dataset
+│   ├── __init__.py                # Tools package initialization
+│   ├── datastore_search.py        # Core search tool with OAuth ACL propagation & STS federation
+│   └── doctor.py                  # Diagnostic connectivity & configuration CLI (tools.doctor)
+├── test_agent.py                  # Comprehensive unit and integration test suite
+├── test_acl_propagation_mock.py   # Server-side mock ACL isolation test (Alice HR vs Bob Dev)
+├── test_scale_multi_connector.py  # 20-datastore / 100-thread concurrent scale benchmark
+└── ae_experiment/                 # AlphaEvolve evolutionary benchmark suite
 ```
 
 ---
 
-## Integration Guide
+## Declarative Multi-Datastore Manifest (`agent.yaml`)
 
-### Direct Tool Import
+Define your enterprise datastores declaratively. `agent.py` automatically instantiates and registers independent tools:
 
-```python
-from google.adk.agents import Agent
-from tools.datastore_search import query_enterprise_datastore
+```yaml
+# agent.yaml
+name: enterprise_knowledge_agent
+entrypoint: "agent:root_agent"
 
-agent = Agent(
-    name="enterprise_assistant",
-    instruction="Search SharePoint, Jira, and Google Drive securely.",
-    tools=[query_enterprise_datastore]
-)
+env:
+  PROJECT_ID: "my-gcp-project"
+  LOCATION: "global"
+  COLLECTION: "default_collection"
+
+datastores:
+  # Category A: User-Level OAuth ACL (SharePoint)
+  - tool_name: "search_sharepoint"
+    engine_id: "sharepoint-engine"
+    auth_name: "sharepoint_oauth"
+    auth_mode: "USER_OAUTH"
+    category: "A"
+    enable_acl_probe: true
+
+  # Category B: Org-Wide / SaaS Connector (Slack)
+  - tool_name: "search_slack"
+    engine_id: "slack-engine"
+    auth_mode: "SERVICE_ACCOUNT"
+    category: "B"
+
+  # Category C: GCP Native / Database (BigQuery Analytics)
+  - tool_name: "search_bigquery_analytics"
+    engine_id: "bigquery-analytics-engine"
+    auth_mode: "SERVICE_ACCOUNT"
+    category: "C"
+    display_columns: ["customer_id", "region", "q3_revenue"]
 ```
 
-### Project Scaffolding via `agents-cli`
+---
+
+## Authentication Modes (`AuthMode`)
+
+| `AuthMode` | Target Categories | Auth Resolution Mechanism | Production Security Behavior |
+| :--- | :--- | :--- | :--- |
+| `USER_OAUTH` | **Category A** (SharePoint, Jira, Drive, Salesforce) | Extracts token from `ToolContext.state[auth_name]` | Strictly **fails closed** (`AUTH_REQUIRED`) if token missing. Never falls back to ADC in production. |
+| `SERVICE_ACCOUNT` | **Category B & C** (Slack, BigQuery, GCS) | Acquires GCP IAM token via Application Default Credentials (ADC) | Queries org-wide / IAM-managed indexes with zero end-user auth prompts. |
+| `FEDERATED` | **Category A / B** (Azure AD, Okta, Atlassian WIF) | RFC 8693 STS exchange (`https://sts.googleapis.com/v1/token`) | Exchanges third-party IdP token for Google federated bearer token via Workforce Identity Pool. |
+| `HYBRID_DEV` | **Localhost Development Only** | Uses user token if present, else falls back to local ADC | Strictly **blocked in managed runtimes** (`Agent Engine`, `Cloud Run`, `GAE`) via `is_managed_runtime()`. |
+
+---
+
+## FDE Diagnostic Doctor CLI (`tools.doctor`)
+
+Validate configuration, credentials, and live endpoint connectivity in a single command:
 
 ```bash
-agents-cli scaffold create --agent github.com/enriquekalven/adk-ge-datastore-connector@main my_agent
+# Run full diagnostic sweep
+python -m tools.doctor
+
+# Run diagnostic sweep with a test OAuth token for Category A verification
+python -m tools.doctor --token "Bearer_Token_Value"
+
+# Run in JSON mode for automated CI/CD pipelines
+python -m tools.doctor --json
 ```
 
 ---
@@ -181,11 +226,11 @@ agents-cli scaffold create --agent github.com/enriquekalven/adk-ge-datastore-con
 
 | Failure Mode | Mitigation Strategy | Implementation |
 | :--- | :--- | :--- |
-| **Token Expiry (HTTP 401)** | Catches 401 status and returns a structured `AUTH_EXPIRED` signal prompting re-authentication. | `tools/datastore_search.py` |
-| **Request Timeouts** | Explicit connect (`3.05s`) and read (`10s`) timeouts prevent thread pool exhaustion. | `tools/datastore_search.py` |
-| **Quota Attribution** | Passes `X-Goog-User-Project: <project_id>` header for project billing attribution. | `tools/datastore_search.py` |
-| **Schema Inconsistency** | Multi-path extraction fallback across `derivedStructData`, `structData`, and `document.name`. | `tools/datastore_search.py` |
-| **Evaluation Tampering** | AST static analysis blocks forbidden module imports (`sys`, `os`, `inspect`). | `ae_experiment/evaluator.py` |
+| **Token Expiry (HTTP 401)** | Automatically catches 401 status and emits structured `AUTH_EXPIRED` signal prompting re-authentication. | `tools/datastore_search.py` |
+| **Missing Scope / IAM (HTTP 403)** | Parses `error.details[].reason` to isolate **Branch A** (*User ACL Denial*) vs **Branch B** (*Scope/IAM misconfiguration*). | `tools/datastore_search.py` |
+| **Zero Hits Troubleshooting** | Optional `enable_acl_probe` issues a background SA count probe to diagnose if documents exist in the index. | `tools/datastore_search.py` |
+| **Transient Errors (HTTP 429/5xx)** | Exponential backoff retry with jitter explicitly enabled on `POST` search requests. | `tools/datastore_search.py` |
+| **Prompt Injection Defense** | Validates `https://` schemes, bounds snippet length, and explicitly frames retrieved documents as untrusted data. | `agent.py` & `tools/datastore_search.py` |
 
 ---
 
