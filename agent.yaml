@@ -1,36 +1,57 @@
 # Universal Agent Manifest Definition for ADK & Gemini Enterprise Deployment
 name: enterprise_knowledge_agent
 display_name: "Generic ACL-Aware Enterprise Knowledge Agent"
-description: "Universal ADK Agent integrating Veer Muchandi's OAuth/ACL token propagation pattern for secure multi-datastore queries via Discovery Engine."
+description: "Universal ADK Agent integrating OAuth/ACL token propagation for secure multi-datastore queries via Discovery Engine."
 
 version: "1.0.0"
 entrypoint: "agent:root_agent"
 
 # Environment Variables Configuration
 env:
-  PROJECT_ID: "your-gcp-project-id"
-  PROJECT_NUMBER: "123456789012" # Note: Must use GCP Project Number
+  PROJECT_ID: "my-gcp-project"
   LOCATION: "global"
   COLLECTION: "default_collection"
-  ENGINE_ID: "enterprise-datastore-engine" # e.g. sharepoint-engine, jira-engine, gdrive-engine
-  AUTH_NAME: "enterprise_oauth"            # e.g. sharepoint_oauth, jira_oauth, gdrive_oauth
   MODEL_NAME: "gemini-2.0-flash"
 
+# Multi-Datastore Declarative Bindings (CUJ 1 Graduation Flow)
+datastores:
+  # Category A: User-Level OAuth ACL (SharePoint)
+  - tool_name: "search_sharepoint"
+    engine_id: "sharepoint-engine"
+    auth_name: "sharepoint_oauth"
+    auth_mode: "USER_OAUTH"
+    category: "A"
+    description: "Searches Microsoft SharePoint documents using user OAuth token ACL propagation."
+    enable_acl_probe: true
+
+  # Category B: Third-Party / SaaS Org-Wide Datastore (Slack Workspace)
+  - tool_name: "search_slack"
+    engine_id: "slack-engine"
+    auth_name: "slack_service_token"
+    auth_mode: "SERVICE_ACCOUNT"
+    category: "B"
+    description: "Searches company-wide Slack channel conversations and message history."
+
+  # Category C: GCP Native / Database Datastore (BigQuery Structured Records)
+  - tool_name: "search_bigquery_analytics"
+    engine_id: "bigquery-analytics-engine"
+    auth_mode: "SERVICE_ACCOUNT"
+    category: "C"
+    description: "Searches internal enterprise BigQuery data warehouses and analytics tables."
+
 # Authorization Configuration Example (Veer Muchandi ACL Pattern)
-# Dynamically injects session OAuth tokens into ToolContext.state[AUTH_NAME]
-# Supported Providers: AZURE_AD, ATLASSIAN, GOOGLE, SALESFORCE, SERVICENOW
+# Dynamically injects session OAuth tokens into ToolContext.state[auth_name]
 authorizationConfig:
   oauthClient:
-    name: "enterprise_oauth"
-    provider: "AZURE_AD" # Change to ATLASSIAN, GOOGLE, SALESFORCE, etc.
+    name: "sharepoint_oauth"
+    provider: "AZURE_AD" # Supports AZURE_AD, ATLASSIAN, GOOGLE, SALESFORCE, SERVICENOW
     scopes:
       - "Files.Read.All"
       - "Sites.Read.All"
 
   # Session State Injection Mapping
   stateInjection:
-    - targetKey: "enterprise_oauth"
+    - targetKey: "sharepoint_oauth"
       sourceClaim: "access_token"
 
-  # Resource specification using GCP Project Number (e.g. projects/{PROJECT_NUMBER}/locations/global/authorizations/{AUTH_NAME})
-  resource: "projects/123456789012/locations/global/authorizations/enterprise-oauth-config"
+  resource: "projects/123456789012/locations/global/authorizations/sharepoint-oauth-config"

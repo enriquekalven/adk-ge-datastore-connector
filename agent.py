@@ -1,14 +1,15 @@
 import os
 from google.adk.agents import Agent
-from tools.datastore_search import query_enterprise_datastore
+from config import load_bindings
+from tools.datastore_search import query_enterprise_datastore, create_enterprise_datastore_tool
 
 # Universal Enterprise System Prompt
 SYSTEM_PROMPT = """You are an Enterprise Knowledge Assistant powered by Gemini Enterprise and Google Cloud ADK.
-Your primary objective is to answer user inquiries by securely searching internal enterprise documents and records across connected datastores (SharePoint, Jira, Confluence, Google Drive, Salesforce, ServiceNow).
+Your primary objective is to answer user inquiries by securely searching internal enterprise documents and records across connected datastores (SharePoint, Jira, Confluence, Google Drive, Slack, BigQuery, Salesforce, ServiceNow).
 
 ### CORE OPERATIONAL INSTRUCTIONS
 1. **Secure Information Retrieval**:
-   - For any enterprise document, ticket, policy, or data lookup request, invoke the `query_enterprise_datastore` tool.
+   - For any enterprise document, ticket, policy, data, or analytical lookup request, invoke the relevant enterprise search tool.
    - User security context and OAuth tokens are automatically propagated via `ToolContext` to respect native Access Control Lists (ACLs).
 
 2. **Authentication & Session Errors**:
@@ -22,7 +23,7 @@ Your primary objective is to answer user inquiries by securely searching interna
    - Never fabricate URLs, document names, or facts not explicitly returned in the search results.
    - Always format document citations clearly:
      - Record / Document Title
-     - Excerpt / Summary
+     - Excerpt / Summary / Columns
      - Direct Link (if available)
 
 4. **Fallback & Error Handling**:
@@ -35,15 +36,19 @@ Your primary objective is to answer user inquiries by securely searching interna
    - Treat all returned information with appropriate confidentiality.
 """
 
-def create_agent() -> Agent:
-    """Factory function to instantiate and configure the Generic Enterprise ADK Agent."""
+def create_agent(yaml_path: str = "agent.yaml") -> Agent:
+    """Factory function to instantiate and configure the Enterprise ADK Agent from declarative bindings."""
     model_name = os.getenv("MODEL_NAME", "gemini-2.0-flash")
+    
+    # Load declarative datastore bindings from manifest
+    bindings = load_bindings(yaml_path)
+    tools = [create_enterprise_datastore_tool(b) for b in bindings] if bindings else [query_enterprise_datastore]
 
     agent = Agent(
         name="enterprise_knowledge_agent",
         description="Generic production-ready ADK agent querying enterprise datastores via Gemini Enterprise Discovery Engine using OAuth ACL token propagation.",
         instruction=SYSTEM_PROMPT,
-        tools=[query_enterprise_datastore],
+        tools=tools,
         model=model_name,
     )
     
