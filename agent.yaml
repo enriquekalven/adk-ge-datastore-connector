@@ -8,7 +8,7 @@ entrypoint: "agent:root_agent"
 
 # Environment Variables Configuration
 env:
-  PROJECT_ID: "my-gcp-project"
+  PROJECT_ID: "your-gcp-project-id"
   LOCATION: "global"
   COLLECTION: "default_collection"
   MODEL_NAME: "gemini-2.0-flash"

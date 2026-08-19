@@ -15,10 +15,20 @@ venv/
 .idea/
 *.swp
 
-# Temporary artifacts
+# Temporary artifacts & internal docs
 tmp/
 *.log
 PRD*.md
 MEDIUM*.md
 TEAM*.md
 INTERNAL*.md
+*opus*
+*.metadata.json
+
+# Credentials & Service Accounts
+*.key
+*.pem
+*credentials*.json
+*token*.json
+service_account*.json
+client_secret*.json
