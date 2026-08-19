@@ -254,18 +254,76 @@ adk-ge-datastore-connector/
 ├── agent.py                       # ADK RootAgent dynamically loading datastores from manifest
 ├── agent.yaml                     # Declarative multi-datastore manifest with AuthMode bindings
 ├── config.py                      # Pydantic schema validation and DatastoreBinding loader
+├── core/                          # Shared Enterprise Connector Engine
+│   ├── __init__.py                # Core package exports
+│   ├── client.py                  # Discovery Engine REST dispatcher & connection pooling
+│   ├── auth.py                    # Dual Token Sourcing (3LO/2LO/STS WIF)
+│   ├── security.py                # Fail-closed guard & strict SSRF host allowlist
+│   ├── reranker.py                # AlphaEvolve Gen 20 field-aware reranker
+│   └── doctor.py                  # Axis A / Axis B diagnostic preflight engine
+├── skills/                        # Top 7 Pre-Built Drop-In Enterprise Skills
+│   ├── __init__.py                # Top-level skill exports
+│   ├── sharepoint/                # [Category A] Microsoft SharePoint Online (3LO)
+│   ├── jira/                      # [Category A] Atlassian Jira Cloud (3LO)
+│   ├── google_drive/              # [Category A] Google Drive & Shared Drives (3LO)
+│   ├── salesforce/                # [Category A] Salesforce CRM (3LO)
+│   ├── slack/                     # [Category B] Slack Enterprise Grid (2LO)
+│   ├── github/                    # [Category B] GitHub Enterprise (2LO)
+│   └── bigquery/                  # [Category C] BigQuery Structured Analytics (2LO)
 ├── tools/
 │   ├── __init__.py                # Tools package initialization
-│   ├── datastore_search.py        # Core search tool with Dual Token Sourcing (3LO/2LO) & STS federation
-│   └── doctor.py                  # Diagnostic connectivity & configuration CLI (tools.doctor)
+│   ├── datastore_search.py        # Backward-compatible search tool facade
+│   ├── doctor.py                  # Diagnostic connectivity CLI runner
+│   └── scaffold.py                # CLI Generator for 80+ additional connectors
 ├── tests/
 │   ├── __init__.py                # Tests package initialization
-│   ├── test_acl_propagation_mock.py   # Server-side mock ACL isolation test (Alice HR vs Bob Dev)
-│   ├── test_agent.py                  # Core unit and integration test suite
-│   ├── test_axis_b_scenarios.py       # Axis B platform/IAM/scope error classification suite (B1–B9)
-│   ├── test_oauth_2lo_3lo.py          # Dedicated 2-Legged & 3-Legged OAuth grant validation suite
+│   ├── test_skills_presets.py     # Verification of Top 7 Enterprise Skills & Scaffolder
+│   ├── test_acl_propagation_mock.py   # Server-side mock ACL isolation test (Alice vs Bob)
+│   ├── test_agent.py              # Core unit and integration test suite
+│   ├── test_axis_b_scenarios.py   # Axis B platform/IAM/scope error classification suite (B1–B9)
+│   ├── test_oauth_2lo_3lo.py      # Dedicated 2-Legged & 3-Legged OAuth grant validation suite
 │   └── test_scale_multi_connector.py  # 20-datastore / 100-thread concurrent scale benchmark
 └── ae_experiment/                 # AlphaEvolve evolutionary benchmark suite (Gen 20 Reranker)
+```
+
+---
+
+## Modular Drop-In Skills (`skills/`)
+
+Instead of building your entire agent around a monolithic manifest, you can import **pre-configured, single-purpose skills** directly into any ADK agent:
+
+```python
+from google.adk.agents import Agent
+from skills import search_sharepoint, search_jira, search_bigquery
+
+# Drop tools straight into your custom agent in 2 lines:
+my_agent = Agent(
+    name="enterprise_copilot",
+    model="gemini-2.0-flash",
+    instruction="Answer employee inquiries using corporate knowledge tools.",
+    tools=[search_sharepoint, search_jira, search_bigquery]
+)
+```
+
+### Pre-Packaged Enterprise Skills
+
+| Skill Package | Target Service | Category & Auth | Built-in Scopes |
+| :--- | :--- | :--- | :--- |
+| [`skills/sharepoint`](skills/sharepoint/SKILL.md) | **Microsoft SharePoint Online** | Category A (3LO) | `Files.Read.All`, `Sites.Read.All` |
+| [`skills/jira`](skills/jira/SKILL.md) | **Atlassian Jira Cloud** | Category A (3LO) | `read:jira-work`, `read:jira-user` |
+| [`skills/google_drive`](skills/google_drive/SKILL.md) | **Google Drive & Shared Drives** | Category A (3LO) | `drive.readonly` |
+| [`skills/salesforce`](skills/salesforce/SKILL.md) | **Salesforce CRM** | Category A (3LO) | `api`, `refresh_token`, `offline_access` |
+| [`skills/slack`](skills/slack/SKILL.md) | **Slack Enterprise Grid** | Category B (2LO) | `channels:read`, `groups:read` |
+| [`skills/github`](skills/github/SKILL.md) | **GitHub Enterprise** | Category B (2LO) | `repo`, `read:org` |
+| [`skills/bigquery`](skills/bigquery/SKILL.md) | **BigQuery Structured Data** | Category C (2LO) | Column allowlists & deep links |
+
+### Generate Custom Skills via Scaffolder CLI (`tools.scaffold`)
+
+Generate a ready-to-run skill folder for any of the other 82 Gemini Enterprise connectors with 1 command:
+
+```bash
+# Scaffold a ServiceNow or Confluence skill
+python -m tools.scaffold create --name servicenow --category A --engine-id servicenow-prod --scopes "user_account"
 ```
 
 ---
