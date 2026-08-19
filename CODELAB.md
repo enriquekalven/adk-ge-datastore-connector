@@ -194,7 +194,7 @@ anon_context = MockSessionContext(token=None, email="anonymous@company.com")
 Execute the bundled test script to verify token propagation:
 ```bash
 python3 -c "
-from test_acl_propagation_mock import TestACLTokenPropagation
+from tests.test_acl_propagation_mock import TestACLTokenPropagation
 t = TestACLTokenPropagation()
 t.test_alice_hr_user_sees_payroll_and_engineering_docs()
 t.test_bob_dev_user_is_blocked_from_hr_payroll_docs()
@@ -345,6 +345,7 @@ In 10 minutes, you have:
 - [x] Packaged and deployed a production-ready ADK agent on Vertex AI Agent Engine.
 
 ### Additional Resources
+- **Identity & RBAC FAQ Guide**: [FAQ.md](FAQ.md)
 - **Reference Repository**: [github.com/enriquekalven/adk-ge-datastore-connector](https://github.com/enriquekalven/adk-ge-datastore-connector)
 - **Google Cloud 3-Legged OAuth Guide**: [docs.cloud.google.com/iam/docs/auth-with-3lo-v2](https://docs.cloud.google.com/iam/docs/auth-with-3lo-v2)
 - **Google Cloud 2-Legged OAuth Guide**: [docs.cloud.google.com/iam/docs/auth-with-2lo-v2](https://docs.cloud.google.com/iam/docs/auth-with-2lo-v2)

@@ -5,10 +5,16 @@
 [![Gemini Enterprise](https://img.shields.io/badge/Gemini-Enterprise_Datastores-8E75B5?logo=google&logoColor=white)](https://cloud.google.com/vertex-ai)
 [![OAuth ACL Security](https://img.shields.io/badge/Security-Multi--Provider_OAuth_ACL-0078D4?logo=lock&logoColor=white)](https://github.com/VeerMuchandi/rad-skills)
 [![AlphaEvolve Compliant](https://img.shields.io/badge/AlphaEvolve-3--Tier_Evaluator-34A853?logo=google&logoColor=white)](https://github.com/google/alphaevolve)
+[![Identity & RBAC FAQ](https://img.shields.io/badge/Architecture-Identity_&_RBAC_FAQ-green?logo=readme&logoColor=white)](FAQ.md)
 
 A production-ready **Google Cloud Agent Development Kit (ADK 2.x)** reference architecture for querying enterprise datastores (**SharePoint, Atlassian Jira, Confluence, Google Drive, Salesforce, ServiceNow**) via Google Cloud Discovery Engine.
 
 Implements **Veer Muchandi's Generic OAuth/ACL Token Propagation Pattern**, enabling custom ADK agents on Vertex AI Agent Runtime to enforce calling users' native enterprise Access Control Lists (ACLs) dynamically at query time.
+
+> 📚 **Quick Links:**
+> - [**Frequently Asked Questions (FAQ) & Identity Architecture Guide**](FAQ.md) — *Detailed breakdown of RBAC, ACLs, Google SSO, WIF, OIDC, and LDAP group synchronization.*
+> - [**10-Minute Hands-On Field Codelab**](CODELAB.md) — *Step-by-step developer tutorial with runnable verification demo.*
+> - [**Interactive Google Colab Notebook**](codelab.ipynb) — *One-click interactive notebook execution in your browser.*
 
 ---
 
@@ -239,7 +245,11 @@ python3 -m tools.doctor --token "ya29.sample_user_oauth_token"
 ```text
 adk-ge-datastore-connector/
 ├── README.md                      # Architecture documentation and deployment guide
-├── pyproject.toml                 # Pinned project packaging and dependencies
+├── FAQ.md                         # Identity & RBAC FAQ (Google SSO, WIF, OIDC, LDAP)
+├── CODELAB.md                     # 10-Minute hands-on field codelab guide
+├── codelab.ipynb                  # Interactive Google Colab notebook
+├── quickstart_demo.py             # Runnable local quickstart verification script
+├── pyproject.toml                 # Pinned project packaging and pytest configuration
 ├── .env.example                   # Environment variable template
 ├── agent.py                       # ADK RootAgent dynamically loading datastores from manifest
 ├── agent.yaml                     # Declarative multi-datastore manifest with AuthMode bindings
@@ -248,13 +258,13 @@ adk-ge-datastore-connector/
 │   ├── __init__.py                # Tools package initialization
 │   ├── datastore_search.py        # Core search tool with Dual Token Sourcing (3LO/2LO) & STS federation
 │   └── doctor.py                  # Diagnostic connectivity & configuration CLI (tools.doctor)
-├── test_agent.py                  # Core unit and integration test suite
-├── test_acl_propagation_mock.py   # Server-side mock ACL isolation test (Alice HR vs Bob Dev)
-├── test_axis_b_scenarios.py       # Axis B platform/IAM/scope error classification suite (B1–B9)
-├── test_oauth_2lo_3lo.py          # Dedicated 2-Legged & 3-Legged OAuth grant validation suite
-├── test_scale_multi_connector.py  # 20-datastore / 100-thread concurrent scale benchmark
 ├── tests/
-│   └── test_live_axis_b_connector.py # Live GCP Discovery Engine integration & SLA suite
+│   ├── __init__.py                # Tests package initialization
+│   ├── test_acl_propagation_mock.py   # Server-side mock ACL isolation test (Alice HR vs Bob Dev)
+│   ├── test_agent.py                  # Core unit and integration test suite
+│   ├── test_axis_b_scenarios.py       # Axis B platform/IAM/scope error classification suite (B1–B9)
+│   ├── test_oauth_2lo_3lo.py          # Dedicated 2-Legged & 3-Legged OAuth grant validation suite
+│   └── test_scale_multi_connector.py  # 20-datastore / 100-thread concurrent scale benchmark
 └── ae_experiment/                 # AlphaEvolve evolutionary benchmark suite (Gen 20 Reranker)
 ```
 
@@ -393,40 +403,40 @@ Expected output:
 ============================= test session starts ==============================
 platform darwin -- Python 3.14.2, pytest-9.0.2
 
-test_acl_propagation_mock.py::TestACLTokenPropagation::test_alice_hr_user_sees_payroll_and_engineering_docs PASSED [  3%]
-test_acl_propagation_mock.py::TestACLTokenPropagation::test_bob_dev_user_is_blocked_from_hr_payroll_docs PASSED [  6%]
-test_agent.py::test_tool_with_session_oauth_token PASSED                 [  9%]
-test_agent.py::test_user_oauth_mode_fails_closed_in_production PASSED    [ 12%]
-test_agent.py::test_service_account_mode_category_b_and_c PASSED         [ 15%]
-test_agent.py::test_federated_sts_token_exchange PASSED                  [ 18%]
-test_agent.py::test_managed_runtime_blocks_hybrid_dev_mode PASSED        [ 21%]
-test_agent.py::test_category_c_structured_data_and_column_prioritization PASSED [ 25%]
-test_agent.py::test_regional_location_and_path_normalization PASSED      [ 28%]
-test_agent.py::test_cuj3_error_classification PASSED                     [ 31%]
-test_agent.py::test_acl_probe_diagnostic_branch_separation PASSED        [ 34%]
-test_agent.py::test_pydantic_manifest_validation_rejects_invalid_keys PASSED [ 37%]
-test_agent.py::test_doctor_cli_json_mode PASSED                          [ 40%]
-test_agent.py::test_2lo_and_3lo_auth_mode_normalization PASSED           [ 43%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b1_scope_insufficient PASSED [ 46%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b2_iam_permission_denied PASSED [ 50%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b3_user_project_denied PASSED [ 53%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b4_service_disabled PASSED [ 56%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b5_idp_token_type_unsupported PASSED [ 59%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b6_token_expired_401 PASSED [ 62%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b7_resource_not_found_404 PASSED [ 65%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b8_empty_index_vs_user_acl_probe PASSED [ 68%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b9_doctor_cli_structured_axis_b_output PASSED [ 71%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_user_token_extracted_from_tool_context_state PASSED [ 75%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_credential_manager_fallback PASSED [ 78%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_missing_token_strictly_fails_closed_in_production PASSED [ 81%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_expired_token_returns_auth_expired PASSED [ 84%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_client_credentials_service_token PASSED [ 87%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_spiffe_agent_identity_for_gcp_native_category_c PASSED [ 90%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_string_literal_normalization PASSED [ 93%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_3lo_string_literal_normalization PASSED [ 96%]
-test_scale_multi_connector.py::test_enterprise_fleet_concurrency_and_per_thread_auth_isolation PASSED [100%]
+tests/test_acl_propagation_mock.py::TestACLTokenPropagation::test_alice_hr_user_sees_payroll_and_engineering_docs PASSED [  3%]
+tests/test_acl_propagation_mock.py::TestACLTokenPropagation::test_bob_dev_user_is_blocked_from_hr_payroll_docs PASSED [  6%]
+tests/test_agent.py::test_tool_with_session_oauth_token PASSED           [  9%]
+tests/test_agent.py::test_user_oauth_mode_fails_closed_in_production PASSED [ 12%]
+tests/test_agent.py::test_service_account_mode_category_b_and_c PASSED   [ 15%]
+tests/test_agent.py::test_federated_sts_token_exchange PASSED            [ 18%]
+tests/test_agent.py::test_managed_runtime_blocks_hybrid_dev_mode PASSED  [ 21%]
+tests/test_agent.py::test_category_c_structured_data_and_column_prioritization PASSED [ 25%]
+tests/test_agent.py::test_regional_location_and_path_normalization PASSED [ 28%]
+tests/test_agent.py::test_cuj3_error_classification PASSED               [ 31%]
+tests/test_agent.py::test_acl_probe_diagnostic_branch_separation PASSED  [ 34%]
+tests/test_agent.py::test_pydantic_manifest_validation_rejects_invalid_keys PASSED [ 37%]
+tests/test_agent.py::test_doctor_cli_json_mode PASSED                    [ 40%]
+tests/test_agent.py::test_2lo_and_3lo_auth_mode_normalization PASSED     [ 43%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b1_scope_insufficient PASSED [ 46%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b2_iam_permission_denied PASSED [ 50%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b3_user_project_denied PASSED [ 53%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b4_service_disabled PASSED [ 56%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b5_idp_token_type_unsupported PASSED [ 59%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b6_token_expired_401 PASSED [ 62%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b7_resource_not_found_404 PASSED [ 65%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b8_empty_index_vs_user_acl_probe PASSED [ 68%]
+tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b9_doctor_cli_structured_axis_b_output PASSED [ 71%]
+tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_user_token_extracted_from_tool_context_state PASSED [ 75%]
+tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_credential_manager_fallback PASSED [ 78%]
+tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_missing_token_strictly_fails_closed_in_production PASSED [ 81%]
+tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_expired_token_returns_auth_expired PASSED [ 84%]
+tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_client_credentials_service_token PASSED [ 87%]
+tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_spiffe_agent_identity_for_gcp_native_category_c PASSED [ 90%]
+tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_string_literal_normalization PASSED [ 93%]
+tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_3lo_string_literal_normalization PASSED [ 96%]
+tests/test_scale_multi_connector.py::test_enterprise_fleet_concurrency_and_per_thread_auth_isolation PASSED [100%]
 
-======================== 32 passed, 1 warning in 4.57s =========================
+======================== 32 passed, 1 warning in 2.66s =========================
 ```
 
 ---
