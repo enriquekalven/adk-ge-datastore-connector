@@ -180,6 +180,59 @@ sequenceDiagram
 
 ---
 
+## 10-Minute Field Quickstart & Developer Codelab
+
+Build and test a minimal, ACL-enforced ADK enterprise datastore agent in under 10 minutes:
+
+### Step 1: Define the Minimal ADK Datastore Tool (`datastore_tool.py`)
+```python
+from google.adk.agents import Agent
+from google.adk.tools import ToolContext, tool
+from tools.datastore_search import execute_datastore_query
+from config import AuthMode
+
+@tool
+def search_enterprise_sharepoint(query: str, tool_context: ToolContext) -> str:
+    """Searches corporate SharePoint documents enforcing the calling user's permissions."""
+    return execute_datastore_query(
+        query=query,
+        tool_context=tool_context,
+        engine_id="sharepoint-engine",
+        auth_name="sharepoint_oauth",
+        auth_mode=AuthMode.USER_OAUTH, # Category A: 3LO user-delegated token
+        project_id="my-gcp-project",
+        location="global"
+    )
+
+# Instantiate the ADK Root Agent
+root_agent = Agent(
+    model="gemini-2.0-flash",
+    name="enterprise_sharepoint_assistant",
+    tools=[search_enterprise_sharepoint],
+    instruction="Answer employee queries using the search_enterprise_sharepoint tool. Always cite source links."
+)
+```
+
+### Step 2: Test Locally with Mock Session Token (`test_quickstart.py`)
+```python
+class MockToolContext:
+    def __init__(self, token: str):
+        self.state = {"sharepoint_oauth": token, "user_email": "alice@example.com"}
+
+# Verify 3LO token injection and ACL-enforced search
+context = MockToolContext(token="ya29.sample_user_oauth_token")
+result = search_enterprise_sharepoint("Project Alpha Roadmap", tool_context=context)
+print(result)
+```
+
+### Step 3: Run Diagnostic Preflight in Terminal
+```bash
+# Validates GCP project IAM, Discovery Engine API, and token health in < 1,800 ms
+python3 -m tools.doctor --token "ya29.sample_user_oauth_token"
+```
+
+---
+
 ## Project Directory Structure
 
 ```text
