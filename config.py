@@ -152,11 +152,11 @@ def load_bindings(yaml_path: Optional[str] = None) -> List[DatastoreBinding]:
                     fields_set = b.model_fields_set
                     updates = {}
                     if "location" not in fields_set and "LOCATION" in global_env:
-                        updates["location"] = global_env["LOCATION"]
+                        updates["location"] = os.getenv("LOCATION", global_env["LOCATION"])
                     if "collection" not in fields_set and "COLLECTION" in global_env:
-                        updates["collection"] = global_env["COLLECTION"]
-                    if "project_id" not in fields_set and "PROJECT_ID" in global_env:
-                        updates["project_id"] = global_env["PROJECT_ID"]
+                        updates["collection"] = os.getenv("COLLECTION", global_env["COLLECTION"])
+                    if "project_id" not in fields_set:
+                        updates["project_id"] = os.getenv("PROJECT_ID", global_env.get("PROJECT_ID"))
                     
                     updated = b.model_copy(update=updates) if updates else b
                     bindings.append(updated)

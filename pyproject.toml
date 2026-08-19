@@ -27,3 +27,4 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["."]
 python_files = "test_*.py"
+norecursedirs = ["tests", "ae_experiment", ".git", "scratch"]

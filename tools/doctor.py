@@ -91,12 +91,16 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
             print("  💻 Local Workstation / Development Runtime Detected")
 
     # 4. Probe Datastore Endpoints
+    # 4. Probe Datastore Endpoints Concurrently
     if not json_output:
         print("\n[4/4] Probing Datastore Endpoints & Permissions...")
     all_ok = (report["overall_status"] == "PASS")
     session = _get_http_session()
 
-    for b in bindings:
+    from concurrent.futures import ThreadPoolExecutor
+    from typing import Dict, Any
+
+    def probe_single_binding(b) -> Dict[str, Any]:
         binding_report = {
             "tool_name": b.tool_name,
             "engine_id": b.engine_id,
@@ -106,8 +110,6 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
             "http_status": None,
             "message": ""
         }
-        if not json_output:
-            print(f"\n--- Probing: {b.tool_name} ({b.engine_id}) ---")
         try:
             norm_loc, host = _resolve_location(b.location)
             target_proj = b.project_id or project_id or "default-project"
@@ -117,20 +119,12 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
             probe_token = test_token if (b.auth_mode == AuthMode.USER_OAUTH and test_token) else adc_token
             if not probe_token:
                 if b.auth_mode == AuthMode.USER_OAUTH:
-                    msg = "Category A (USER_OAUTH) requires end-user token to issue live search probe. (Pass --token to test end-to-end)"
                     binding_report["status"] = "WARN"
-                    binding_report["message"] = msg
-                    if not json_output:
-                        print(f"  ℹ️  {msg}")
+                    binding_report["message"] = "Category A (USER_OAUTH) requires end-user token to issue live search probe. (Pass --token to test end-to-end)"
                 else:
-                    msg = "No ADC token available to issue live HTTP probe. Skipping."
                     binding_report["status"] = "FAIL"
-                    binding_report["message"] = msg
-                    all_ok = False
-                    if not json_output:
-                        print(f"  ⚠️  {msg}")
-                report["bindings"].append(binding_report)
-                continue
+                    binding_report["message"] = "No ADC token available to issue live HTTP probe. Skipping."
+                return binding_report
 
             headers = {
                 "Authorization": f"Bearer {probe_token}",
@@ -145,8 +139,6 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
             if resp.status_code == 200:
                 binding_report["status"] = "PASS"
                 binding_report["message"] = "Endpoint reachable and authorized (Status 200 OK)"
-                if not json_output:
-                    print(f"  ✅ [PASS] Endpoint reachable and authorized (Status 200 OK)")
             elif resp.status_code == 403:
                 reason, branch, remediation = _classify_error(resp)
                 binding_report["branch"] = branch
@@ -155,44 +147,41 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
                 if b.auth_mode == AuthMode.USER_OAUTH and not test_token:
                     binding_report["status"] = "PASS"
                     binding_report["message"] = "Expected 403 under ADC probe for Category A (End-user token required)."
-                    if not json_output:
-                        print(f"  ℹ️  [STATUS 403] Expected: Category A requires end-user token. Diagnostic Classification: {branch}")
                 else:
                     binding_report["status"] = "FAIL"
                     binding_report["message"] = f"Forbidden: {remediation}"
-                    all_ok = False
-                    if not json_output:
-                        print(f"  ❌ [STATUS 403] Diagnostic Classification: {branch}")
-                        print(f"     Reason: {reason}")
-                        print(f"     Remediation: {remediation}")
             elif resp.status_code == 404:
-                msg = f"404 Not Found. Verify ENGINE_ID='{b.engine_id}', COLLECTION='{b.collection}', LOCATION='{b.location}'."
                 binding_report["status"] = "FAIL"
-                binding_report["message"] = msg
-                all_ok = False
-                if not json_output:
-                    print(f"  ❌ [FAIL] {msg}")
-            elif resp.status_code == 401:
-                msg = "401 Unauthorized. Token expired or invalid audience."
-                binding_report["status"] = "FAIL"
-                binding_report["message"] = msg
-                all_ok = False
-                if not json_output:
-                    print(f"  ❌ [FAIL] {msg}")
+                binding_report["message"] = f"404 Not Found. Verify ENGINE_ID='{b.engine_id}', COLLECTION='{b.collection}', LOCATION='{b.location}'."
             else:
-                msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
                 binding_report["status"] = "WARN"
-                binding_report["message"] = msg
-                if not json_output:
-                    print(f"  ⚠️  [STATUS {resp.status_code}] Response: {resp.text[:200]}")
-        except Exception as err:
-            binding_report["status"] = "ERROR"
-            binding_report["message"] = str(err)
-            all_ok = False
-            if not json_output:
-                print(f"  ❌ [ERROR] Probe failed: {err}")
-            
+                binding_report["message"] = f"Unexpected HTTP status {resp.status_code}: {resp.text[:150]}"
+        except Exception as e:
+            binding_report["status"] = "FAIL"
+            binding_report["message"] = f"Connection error: {e}"
+        return binding_report
+
+    with ThreadPoolExecutor(max_workers=min(len(bindings), 8) or 1) as executor:
+        binding_results = list(executor.map(probe_single_binding, bindings))
+
+    for b, binding_report in zip(bindings, binding_results):
         report["bindings"].append(binding_report)
+        if binding_report["status"] == "FAIL" or binding_report["status"] == "ERROR":
+            all_ok = False
+            
+        if not json_output:
+            print(f"\n--- Probing: {b.tool_name} ({b.engine_id}) ---")
+            if binding_report["status"] == "PASS":
+                if "Expected 403" in binding_report["message"]:
+                    print(f"  ℹ️  [STATUS 403] Expected: Category A requires end-user token. Diagnostic Classification: {binding_report.get('branch', 'BRANCH_B_FORBIDDEN')}")
+                else:
+                    print(f"  ✅ [PASS] {binding_report['message']}")
+            elif binding_report["status"] == "WARN":
+                print(f"  ℹ️  {binding_report['message']}")
+            else:
+                print(f"  ❌ [{binding_report.get('http_status') or 'FAIL'}] {binding_report['message']}")
+                if "remediation" in binding_report:
+                    print(f"     Remediation: {binding_report['remediation']}")
 
     report["overall_status"] = "PASS" if all_ok else "FAIL"
 

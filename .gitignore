@@ -32,3 +32,8 @@ INTERNAL*.md
 *token*.json
 service_account*.json
 client_secret*.json
+
+# Live GCP tests & environment-specific test files
+test_live*.py
+tests/
+scratch/

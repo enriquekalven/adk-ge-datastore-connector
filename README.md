@@ -1,5 +1,6 @@
 # ADK Gemini Enterprise Datastore Connector
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/enriquekalven/adk-ge-datastore-connector/blob/main/codelab.ipynb)
 [![Google Cloud ADK](https://img.shields.io/badge/Google_Cloud-ADK_2.x-4285F4?logo=googlecloud&logoColor=white)](https://github.com/google/adk-python)
 [![Gemini Enterprise](https://img.shields.io/badge/Gemini-Enterprise_Datastores-8E75B5?logo=google&logoColor=white)](https://cloud.google.com/vertex-ai)
 [![OAuth ACL Security](https://img.shields.io/badge/Security-Multi--Provider_OAuth_ACL-0078D4?logo=lock&logoColor=white)](https://github.com/VeerMuchandi/rad-skills)
@@ -379,9 +380,9 @@ agents-cli deploy \
 pip install -r requirements.txt
 ```
 
-### 2. Run Comprehensive Test Suite (39 Tests)
+### 2. Run Comprehensive Test Suite (32 Tests)
 
-Execute the full suite of unit, mock, and integration tests:
+Execute the full suite of unit, grant model, and offline mock tests:
 
 ```bash
 pytest -v
@@ -392,47 +393,40 @@ Expected output:
 ============================= test session starts ==============================
 platform darwin -- Python 3.14.2, pytest-9.0.2
 
-test_acl_propagation_mock.py::TestACLTokenPropagation::test_alice_hr_user_sees_payroll_and_engineering_docs PASSED [  2%]
-test_acl_propagation_mock.py::TestACLTokenPropagation::test_bob_dev_user_is_blocked_from_hr_payroll_docs PASSED [  5%]
-test_agent.py::test_tool_with_session_oauth_token PASSED                 [  7%]
-test_agent.py::test_user_oauth_mode_fails_closed_in_production PASSED    [ 10%]
-test_agent.py::test_service_account_mode_category_b_and_c PASSED         [ 12%]
-test_agent.py::test_federated_sts_token_exchange PASSED                  [ 15%]
-test_agent.py::test_managed_runtime_blocks_hybrid_dev_mode PASSED        [ 17%]
-test_agent.py::test_category_c_structured_data_and_column_prioritization PASSED [ 20%]
-test_agent.py::test_regional_location_and_path_normalization PASSED      [ 23%]
-test_agent.py::test_cuj3_error_classification PASSED                     [ 25%]
-test_agent.py::test_acl_probe_diagnostic_branch_separation PASSED        [ 28%]
-test_agent.py::test_pydantic_manifest_validation_rejects_invalid_keys PASSED [ 30%]
-test_agent.py::test_doctor_cli_json_mode PASSED                          [ 33%]
-test_agent.py::test_2lo_and_3lo_auth_mode_normalization PASSED           [ 35%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b1_scope_insufficient PASSED [ 38%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b2_iam_permission_denied PASSED [ 41%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b3_user_project_denied PASSED [ 43%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b4_service_disabled PASSED [ 46%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b5_idp_token_type_unsupported PASSED [ 48%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b6_token_expired_401 PASSED [ 51%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b7_resource_not_found_404 PASSED [ 53%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b8_empty_index_vs_user_acl_probe PASSED [ 56%]
-test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b9_doctor_cli_structured_axis_b_output PASSED [ 58%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_user_token_extracted_from_tool_context_state PASSED [ 61%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_credential_manager_fallback PASSED [ 64%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_missing_token_strictly_fails_closed_in_production PASSED [ 66%]
-test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_expired_token_returns_auth_expired PASSED [ 69%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_client_credentials_service_token PASSED [ 71%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_spiffe_agent_identity_for_gcp_native_category_c PASSED [ 74%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_string_literal_normalization PASSED [ 76%]
-test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_3lo_string_literal_normalization PASSED [ 79%]
-test_scale_multi_connector.py::test_enterprise_fleet_concurrency_and_per_thread_auth_isolation PASSED [ 82%]
-tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b1_b2_classification_parser PASSED [ 84%]
-tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b6_unauthenticated_expired_token PASSED [ 87%]
-tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b7_resource_not_found_404_and_fallback PASSED [ 89%]
-tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b8_index_vs_query_mismatch_disambiguation PASSED [ 92%]
-tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b9_doctor_cli_preflight_sla_performance PASSED [ 94%]
-tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b10_location_normalization_dns PASSED [ 97%]
-tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b11_connection_pooling_and_keepalive PASSED [100%]
+test_acl_propagation_mock.py::TestACLTokenPropagation::test_alice_hr_user_sees_payroll_and_engineering_docs PASSED [  3%]
+test_acl_propagation_mock.py::TestACLTokenPropagation::test_bob_dev_user_is_blocked_from_hr_payroll_docs PASSED [  6%]
+test_agent.py::test_tool_with_session_oauth_token PASSED                 [  9%]
+test_agent.py::test_user_oauth_mode_fails_closed_in_production PASSED    [ 12%]
+test_agent.py::test_service_account_mode_category_b_and_c PASSED         [ 15%]
+test_agent.py::test_federated_sts_token_exchange PASSED                  [ 18%]
+test_agent.py::test_managed_runtime_blocks_hybrid_dev_mode PASSED        [ 21%]
+test_agent.py::test_category_c_structured_data_and_column_prioritization PASSED [ 25%]
+test_agent.py::test_regional_location_and_path_normalization PASSED      [ 28%]
+test_agent.py::test_cuj3_error_classification PASSED                     [ 31%]
+test_agent.py::test_acl_probe_diagnostic_branch_separation PASSED        [ 34%]
+test_agent.py::test_pydantic_manifest_validation_rejects_invalid_keys PASSED [ 37%]
+test_agent.py::test_doctor_cli_json_mode PASSED                          [ 40%]
+test_agent.py::test_2lo_and_3lo_auth_mode_normalization PASSED           [ 43%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b1_scope_insufficient PASSED [ 46%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b2_iam_permission_denied PASSED [ 50%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b3_user_project_denied PASSED [ 53%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b4_service_disabled PASSED [ 56%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b5_idp_token_type_unsupported PASSED [ 59%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b6_token_expired_401 PASSED [ 62%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b7_resource_not_found_404 PASSED [ 65%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b8_empty_index_vs_user_acl_probe PASSED [ 68%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b9_doctor_cli_structured_axis_b_output PASSED [ 71%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_user_token_extracted_from_tool_context_state PASSED [ 75%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_credential_manager_fallback PASSED [ 78%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_missing_token_strictly_fails_closed_in_production PASSED [ 81%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_expired_token_returns_auth_expired PASSED [ 84%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_client_credentials_service_token PASSED [ 87%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_spiffe_agent_identity_for_gcp_native_category_c PASSED [ 90%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_string_literal_normalization PASSED [ 93%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_3lo_string_literal_normalization PASSED [ 96%]
+test_scale_multi_connector.py::test_enterprise_fleet_concurrency_and_per_thread_auth_isolation PASSED [100%]
 
-======================== 39 passed, 1 warning in 16.45s ========================
+======================== 32 passed, 1 warning in 4.57s =========================
 ```
 
 ---
