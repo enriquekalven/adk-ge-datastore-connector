@@ -192,12 +192,16 @@ adk-ge-datastore-connector/
 ├── config.py                      # Pydantic schema validation and DatastoreBinding loader
 ├── tools/
 │   ├── __init__.py                # Tools package initialization
-│   ├── datastore_search.py        # Core search tool with OAuth ACL propagation & STS federation
+│   ├── datastore_search.py        # Core search tool with Dual Token Sourcing (3LO/2LO) & STS federation
 │   └── doctor.py                  # Diagnostic connectivity & configuration CLI (tools.doctor)
-├── test_agent.py                  # Comprehensive unit and integration test suite
+├── test_agent.py                  # Core unit and integration test suite
 ├── test_acl_propagation_mock.py   # Server-side mock ACL isolation test (Alice HR vs Bob Dev)
+├── test_axis_b_scenarios.py       # Axis B platform/IAM/scope error classification suite (B1–B9)
+├── test_oauth_2lo_3lo.py          # Dedicated 2-Legged & 3-Legged OAuth grant validation suite
 ├── test_scale_multi_connector.py  # 20-datastore / 100-thread concurrent scale benchmark
-└── ae_experiment/                 # AlphaEvolve evolutionary benchmark suite
+├── tests/
+│   └── test_live_axis_b_connector.py # Live GCP Discovery Engine integration & SLA suite
+└── ae_experiment/                 # AlphaEvolve evolutionary benchmark suite (Gen 20 Reranker)
 ```
 
 ---
@@ -245,16 +249,19 @@ datastores:
 
 | `AuthMode` | Target Categories | Auth Resolution Mechanism | Production Security Behavior |
 | :--- | :--- | :--- | :--- |
-| `USER_OAUTH` | **Category A** (SharePoint, Jira, Drive, Salesforce) | Extracts token from `ToolContext.state[auth_name]` | Strictly **fails closed** (`AUTH_REQUIRED`) if token missing. Never falls back to ADC in production. |
-| `SERVICE_ACCOUNT` | **Category B & C** (Slack, BigQuery, GCS) | Acquires GCP IAM token via Application Default Credentials (ADC) | Queries org-wide / IAM-managed indexes with zero end-user auth prompts. |
-| `FEDERATED` | **Category A / B** (Azure AD, Okta, Atlassian WIF) | RFC 8693 STS exchange (`https://sts.googleapis.com/v1/token`) | Exchanges third-party IdP token for Google federated bearer token via Workforce Identity Pool. |
+| `USER_OAUTH`<br>`(3LO / THREE_LEGGED_OAUTH)` | **Category A**<br>(SharePoint, Jira, Drive, Salesforce) | Extracts from `ToolContext.state[auth_name]` with fallback to `CredentialManager` | Strictly **fails closed** (`AUTH_REQUIRED`) if token is missing. Never leaks ambient ADC in production (Issue #897: Fail-Closed Security). |
+| `SERVICE_ACCOUNT`<br>`(2LO / TWO_LEGGED_OAUTH / M2M)` | **Category B & C**<br>(GitHub, Slack, BigQuery, GCS) | Acquires GCP IAM / SPIFFE token via Application Default Credentials (ADC) or Agent Identity | Queries org-wide / data lake indexes autonomously with zero end-user auth prompts. |
+| `FEDERATED` | **Category A / B**<br>(Azure AD, Okta, Atlassian WIF) | RFC 8693 STS exchange (`https://sts.googleapis.com/v1/token`) | Exchanges third-party IdP token for Google federated bearer token via Workforce Identity Pool. |
 | `HYBRID_DEV` | **Localhost Development Only** | Uses user token if present, else falls back to local ADC | Strictly **blocked in managed runtimes** (`Agent Engine`, `Cloud Run`, `GAE`) via `is_managed_runtime()`. |
+
+> [!TIP]
+> **Dual Token Sourcing Architecture:** `tools/datastore_search.py` automatically checks `ToolContext.state[auth_name]` for active Gemini Enterprise session tokens, and seamlessly falls back to `tool_context.get_auth_credential()` from ADK's `CredentialManager` when connected to Google Cloud Agent Identity Auth Manager (API v2).
 
 ---
 
 ## FDE Diagnostic Doctor CLI (`tools.doctor`)
 
-Validate configuration, credentials, and live endpoint connectivity in a single command:
+Validate configuration, credentials, and live endpoint connectivity in a single command (< 1,800 ms execution time):
 
 ```bash
 # Run full diagnostic sweep
@@ -269,14 +276,16 @@ python -m tools.doctor --json
 
 ---
 
-## Production Failure Mode Mitigation
+## Production Failure Mode & Security Hardening
 
-| Failure Mode | Mitigation Strategy | Implementation |
+| Failure Mode / Deficit | Mitigation Strategy | Implementation |
 | :--- | :--- | :--- |
+| **`NO_CONTENT` 400 Errors** | Catches 400 `INVALID_ARGUMENT` from custom/code schemas rejecting `contentSearchSpec`, auto-recovering without snippet spec. | `tools/datastore_search.py` |
+| **Pickling Crashes (Cloudpickle Export)** | Replaced closures with pure-Python top-level callable class (`DatastoreSearchTool`) storing primitives only. | `tools/datastore_search.py` |
 | **Token Expiry (HTTP 401)** | Automatically catches 401 status and emits structured `AUTH_EXPIRED` signal prompting re-authentication. | `tools/datastore_search.py` |
-| **Missing Scope / IAM (HTTP 403)** | Parses `error.details[].reason` to isolate **Branch A** (*User ACL Denial*) vs **Branch B** (*Scope/IAM misconfiguration*). | `tools/datastore_search.py` |
+| **Missing Scope / IAM (HTTP 403)** | Parses `error.details[].reason` to isolate **Axis A** (*User ACL Denial*) vs **Axis B** (*Scope/IAM misconfiguration*). | `tools/datastore_search.py` |
 | **Zero Hits Troubleshooting** | Optional `enable_acl_probe` issues a background SA count probe to diagnose if documents exist in the index. | `tools/datastore_search.py` |
-| **Transient Errors (HTTP 429/5xx)** | Exponential backoff retry with jitter explicitly enabled on `POST` search requests. | `tools/datastore_search.py` |
+| **Transient Errors (HTTP 429/5xx)** | Exponential backoff retry with jitter explicitly enabled on `POST` search requests with connection pooling. | `tools/datastore_search.py` |
 | **Prompt Injection Defense** | Validates `https://` schemes, bounds snippet length, and explicitly frames retrieved documents as untrusted data. | `agent.py` & `tools/datastore_search.py` |
 
 ---
@@ -317,86 +326,87 @@ agents-cli deploy \
 pip install -r requirements.txt
 ```
 
-### 2. Run Test Suite
+### 2. Run Comprehensive Test Suite (39 Tests)
+
+Execute the full suite of unit, mock, and integration tests:
 
 ```bash
-python3 test_agent.py
+pytest -v
 ```
 
 Expected output:
 ```text
-==================================================
-   Running Generic ADK Enterprise Datastore Test Suite
-==================================================
+============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.2
 
---- Test 1: Active User OAuth Token Propagation ---
-✅ Test 1 PASSED: OAuth Token & X-Goog-User-Project headers sent successfully.
+test_acl_propagation_mock.py::TestACLTokenPropagation::test_alice_hr_user_sees_payroll_and_engineering_docs PASSED [  2%]
+test_acl_propagation_mock.py::TestACLTokenPropagation::test_bob_dev_user_is_blocked_from_hr_payroll_docs PASSED [  5%]
+test_agent.py::test_tool_with_session_oauth_token PASSED                 [  7%]
+test_agent.py::test_user_oauth_mode_fails_closed_in_production PASSED    [ 10%]
+test_agent.py::test_service_account_mode_category_b_and_c PASSED         [ 12%]
+test_agent.py::test_federated_sts_token_exchange PASSED                  [ 15%]
+test_agent.py::test_managed_runtime_blocks_hybrid_dev_mode PASSED        [ 17%]
+test_agent.py::test_category_c_structured_data_and_column_prioritization PASSED [ 20%]
+test_agent.py::test_regional_location_and_path_normalization PASSED      [ 23%]
+test_agent.py::test_cuj3_error_classification PASSED                     [ 25%]
+test_agent.py::test_acl_probe_diagnostic_branch_separation PASSED        [ 28%]
+test_agent.py::test_pydantic_manifest_validation_rejects_invalid_keys PASSED [ 30%]
+test_agent.py::test_doctor_cli_json_mode PASSED                          [ 33%]
+test_agent.py::test_2lo_and_3lo_auth_mode_normalization PASSED           [ 35%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b1_scope_insufficient PASSED [ 38%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b2_iam_permission_denied PASSED [ 41%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b3_user_project_denied PASSED [ 43%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b4_service_disabled PASSED [ 46%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b5_idp_token_type_unsupported PASSED [ 48%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b6_token_expired_401 PASSED [ 51%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b7_resource_not_found_404 PASSED [ 53%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b8_empty_index_vs_user_acl_probe PASSED [ 56%]
+test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b9_doctor_cli_structured_axis_b_output PASSED [ 58%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_user_token_extracted_from_tool_context_state PASSED [ 61%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_credential_manager_fallback PASSED [ 64%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_missing_token_strictly_fails_closed_in_production PASSED [ 66%]
+test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_expired_token_returns_auth_expired PASSED [ 69%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_client_credentials_service_token PASSED [ 71%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_spiffe_agent_identity_for_gcp_native_category_c PASSED [ 74%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_string_literal_normalization PASSED [ 76%]
+test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_3lo_string_literal_normalization PASSED [ 79%]
+test_scale_multi_connector.py::test_enterprise_fleet_concurrency_and_per_thread_auth_isolation PASSED [ 82%]
+tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b1_b2_classification_parser PASSED [ 84%]
+tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b6_unauthenticated_expired_token PASSED [ 87%]
+tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b7_resource_not_found_404_and_fallback PASSED [ 89%]
+tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b8_index_vs_query_mismatch_disambiguation PASSED [ 92%]
+tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b9_doctor_cli_preflight_sla_performance PASSED [ 94%]
+tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b10_location_normalization_dns PASSED [ 97%]
+tests/test_live_axis_b_connector.py::TestLiveAxisBConnector::test_live_b11_connection_pooling_and_keepalive PASSED [100%]
 
---- Test 2: HTTP 401 Token Expiry Handling ---
-✅ Test 2 PASSED: 401 Unauthorized caught and converted to AUTH_EXPIRED signal.
-
---- Test 3: HTTP Timeout Exception Handling ---
-✅ Test 3 PASSED: Connection timeout caught gracefully without crashing.
-
---- Test 4: Agent Configuration & System Prompt ---
-✅ Test 4 PASSED: Agent configuration and prompt rules verified.
-
-🎉 ALL TESTS PASSED SUCCESSFULLY!
+======================== 39 passed, 1 warning in 16.45s ========================
 ```
 
 ---
 
-## AlphaEvolve Reranker Benchmark
+## AlphaEvolve Reranker Evolutionary Trajectory
 
-To execute the DeepMind AlphaEvolve 3-tier evaluation benchmark:
+To evaluate or reproduce the DeepMind AlphaEvolve 3-tier evolutionary search simulation:
 
 ```bash
-python3 ae_experiment/evaluator.py --program-dir ae_experiment --output-file /tmp/eval_output.json
+python3 ae_experiment/run_alphaevolve_simulation.py
 ```
+
+### Search Trajectory Results
+* **Generation 0 (Baseline Term Frequency):** Fitness `0.8196` (80% Precision)
+* **Generation 5 (TF + Title Prefix Mutation):** Fitness `0.7396` (60% Precision)
+* **Generation 12 (BM25 Saturation + Exact Match):** Fitness `0.8195` (80% Precision)
+* **Generation 20 (Winning Production Reranker):** Fitness **`0.8988`** (**100% Precision 5/5**, **0.06ms Latency**)
 
 ---
 
-## Deployment Manifest (`agent.yaml`)
-
-```yaml
-name: enterprise_knowledge_agent
-display_name: "Generic ACL-Aware Enterprise Knowledge Agent"
-version: "1.0.0"
-entrypoint: "agent:root_agent"
-
-env:
-  PROJECT_ID: "your-gcp-project-id"
-  PROJECT_NUMBER: "123456789012"
-  LOCATION: "global"
-  ENGINE_ID: "enterprise-datastore-engine"
-  AUTH_NAME: "enterprise_oauth"
-
-authorizationConfig:
-  oauthClient:
-    name: "enterprise_oauth"
-    provider: "AZURE_AD"
-    scopes:
-      - "Files.Read.All"
-      - "Sites.Read.All"
-
-  stateInjection:
-    - targetKey: "enterprise_oauth"
-      sourceClaim: "access_token"
-
-  resource: "projects/123456789012/locations/global/authorizations/enterprise-oauth-config"
-```
-
-Deploy using `agents-cli`:
-
-```bash
-agents-cli deploy --agent-manifest agent.yaml
-```
-
----
-
-## References
+## References & Documentation
 
 - **Veer Muchandi**: [ADK Gemini Enterprise Datastore Connector Specification](https://github.com/VeerMuchandi/rad-skills/blob/main/adk_ge_datastore_connector/SKILL.md)
-- **Lukas Geiger**: [Vertex GenAI A2A GE OAuth Reference Architecture](https://github.com/ljogeiger/VertexGenAISamples/tree/main/public/a2a_ge_oauth_example)
+- **Google Cloud Agent Identity Overview**: [docs.cloud.google.com/iam/docs/agent-identity-overview](https://docs.cloud.google.com/iam/docs/agent-identity-overview)
+- **Authenticate using 3-Legged OAuth with Auth Manager (v2)**: [docs.cloud.google.com/iam/docs/auth-with-3lo-v2](https://docs.cloud.google.com/iam/docs/auth-with-3lo-v2)
+- **Authenticate using 2-Legged OAuth with Auth Manager (v2)**: [docs.cloud.google.com/iam/docs/auth-with-2lo-v2](https://docs.cloud.google.com/iam/docs/auth-with-2lo-v2)
+- **Authenticate using Agent's Own Authority (SPIFFE Identity)**: [docs.cloud.google.com/iam/docs/auth-agent-own-identity](https://docs.cloud.google.com/iam/docs/auth-agent-own-identity)
+- **Authenticate using API Key with Auth Manager (v2)**: [docs.cloud.google.com/iam/docs/auth-with-api-key-v2](https://docs.cloud.google.com/iam/docs/auth-with-api-key-v2)
 - **Google ADK Framework**: [Google Agent Development Kit](https://github.com/google/adk-python)
 - **DeepMind AlphaEvolve**: [AlphaEvolve Reference Guide](https://github.com/google/alphaevolve)

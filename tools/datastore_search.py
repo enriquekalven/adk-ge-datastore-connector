@@ -362,10 +362,19 @@ def execute_datastore_query(
     state_token = None
     user_id = "anonymous"
     session_id = "default_session"
-    if tool_context and hasattr(tool_context, "state") and tool_context.state:
-        state_token = tool_context.state.get(target_auth_name)
-        user_id = tool_context.state.get("user_id", tool_context.state.get("user_email", "authenticated_user"))
-        session_id = tool_context.state.get("session_id", "active_session")
+    if tool_context:
+        if hasattr(tool_context, "state") and tool_context.state:
+            state_token = tool_context.state.get(target_auth_name)
+            user_id = tool_context.state.get("user_id", tool_context.state.get("user_email", "authenticated_user"))
+            session_id = tool_context.state.get("session_id", "active_session")
+        # Agent Identity V2 / CredentialManager fallback integration
+        if not state_token and hasattr(tool_context, "get_auth_credential"):
+            try:
+                cred = tool_context.get_auth_credential(target_auth_name)
+                if cred and hasattr(cred, "token") and cred.token:
+                    state_token = cred.token
+            except Exception:
+                pass
         
     access_token, auth_status = resolve_credential(
         target_auth_mode, state_token, target_auth_name, wif_audience, wif_project_number, subject_token_type
@@ -425,9 +434,18 @@ def execute_datastore_query(
     try:
         response = session.post(url, json=payload, headers=headers, timeout=(3.05, 10.0))
         
+        if response.status_code == 400 and "contentSearchSpec" in payload:
+            # Handle NO_CONTENT / STANDARD data stores that reject extractiveContentSpec
+            clean_payload = {k: v for k, v in payload.items() if k != "contentSearchSpec"}
+            response = session.post(url, json=clean_payload, headers=headers, timeout=(3.05, 10.0))
+            payload = clean_payload
+            
         if response.status_code == 404 and res_type == "engines":
             fallback_url = f"https://{host}/v1alpha/projects/{target_project_id}/locations/{norm_location}/collections/{target_collection}/dataStores/{target_engine_id}/servingConfigs/default_search:search"
             response = session.post(fallback_url, json=payload, headers=headers, timeout=(3.05, 10.0))
+            if response.status_code == 400 and "contentSearchSpec" in payload:
+                clean_payload = {k: v for k, v in payload.items() if k != "contentSearchSpec"}
+                response = session.post(fallback_url, json=clean_payload, headers=headers, timeout=(3.05, 10.0))
         
         latency_ms = int((time.time() - start_time) * 1000)
         

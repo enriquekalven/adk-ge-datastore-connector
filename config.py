@@ -10,10 +10,12 @@ logger = logging.getLogger(__name__)
 
 class AuthMode(str, Enum):
     """Authentication mode for Gemini Enterprise datastore connectors."""
-    USER_OAUTH = "USER_OAUTH"           # Category A: Strict fail-closed user token propagation
-    SERVICE_ACCOUNT = "SERVICE_ACCOUNT" # Category B & C: Org-wide / IAM ADC search (e.g. Slack, BigQuery, GCS)
+    USER_OAUTH = "USER_OAUTH"           # Category A: 3-Legged OAuth (3LO) strict fail-closed user token propagation
+    SERVICE_ACCOUNT = "SERVICE_ACCOUNT" # Category B & C: 2-Legged OAuth (2LO) Machine-to-Machine / Service Principal
     FEDERATED = "FEDERATED"             # Category A/B with Third-party IdP token + STS / WIF exchange
     HYBRID_DEV = "HYBRID_DEV"           # Localhost developer mode only (falls back to ADC if token missing)
+    TWO_LEGGED_OAUTH = "TWO_LEGGED_OAUTH"   # Explicit 2LO alias for M2M Client Credentials
+    THREE_LEGGED_OAUTH = "THREE_LEGGED_OAUTH" # Explicit 3LO alias for Delegated User Consent
 
 _MANAGED_ENV_VARS = (
     "GOOGLE_CLOUD_AGENT_ENGINE_ID",
@@ -30,8 +32,8 @@ class DatastoreBinding(BaseModel):
     tool_name: str = Field(..., description="Unique Python function name for ADK tool registration")
     engine_id: str = Field(..., description="Discovery Engine Engine ID or DataStore ID")
     auth_name: str = Field(default="enterprise_oauth", description="ToolContext.state key storing session OAuth token")
-    auth_mode: AuthMode = Field(default=AuthMode.USER_OAUTH, description="Auth mode (USER_OAUTH, SERVICE_ACCOUNT, FEDERATED, HYBRID_DEV)")
-    category: str = Field(default="A", description="Connector category (A: User ACL, B: SaaS Org-Wide, C: GCP Native/DB)")
+    auth_mode: AuthMode = Field(default=AuthMode.USER_OAUTH, description="Auth mode (USER_OAUTH / 3LO, SERVICE_ACCOUNT / 2LO, FEDERATED, HYBRID_DEV)")
+    category: str = Field(default="A", description="Connector category (A: User ACL / 3LO, B: SaaS Org-Wide / 2LO, C: GCP Native / 2LO)")
     location: str = Field(default="global", description="GCP Location (global, us, eu, us-central1, etc.)")
     collection: str = Field(default="default_collection", description="Discovery Engine Collection ID")
     resource_type: Optional[Literal["engines", "dataStores"]] = Field(default=None, description="Explicit resource type in REST path")
@@ -50,6 +52,17 @@ class DatastoreBinding(BaseModel):
     scopes: Optional[List[str]] = Field(default=None, description="List of OAuth scopes required for this datastore")
     page_size: int = Field(default=5, ge=1, le=50, description="Max number of search results to retrieve")
     filter: Optional[str] = Field(default=None, description="Discovery Engine filter expression (e.g. branch: main)")
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def normalize_auth_mode(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            clean = v.upper().strip()
+            if clean in ("2LO", "2-LEGGED", "TWO_LEGGED_OAUTH", "M2M", "CLIENT_CREDENTIALS"):
+                return AuthMode.SERVICE_ACCOUNT
+            if clean in ("3LO", "3-LEGGED", "THREE_LEGGED_OAUTH", "USER_OAUTH", "USER_DELEGATED"):
+                return AuthMode.USER_OAUTH
+        return v
 
     @field_validator("tool_name")
     @classmethod
