@@ -1,26 +1,160 @@
 [
   {
-    "query": "Q3 financial security audit report",
+    "id": "adv_q1_keyword_stuffing",
+    "query": "Quarterly Financial Security Audit Q3 2026",
+    "category": "A",
     "raw_results": [
       {
         "document": {
+          "id": "doc_hr_stuffed",
           "derivedStructData": {
-            "title": "General Employee Onboarding Manual 2026",
-            "link": "https://enterprise.internal/hr/onboarding.pdf",
-            "snippets": [{"snippet": "Welcome to the company. Please ensure your badges are visible at all times."}]
+            "title": "General Employee Security Guidelines",
+            "link": "https://enterprise.internal/hr/security.pdf",
+            "snippets": [
+              {
+                "snippet": "security security security security security security security security security security security security security security security security security security audit audit audit"
+              }
+            ]
           }
         }
       },
       {
         "document": {
+          "id": "doc_target_audit",
           "derivedStructData": {
             "title": "Quarterly Financial Security Audit Q3 2026",
             "link": "https://enterprise.internal/finance/audit_q3_2026.pdf",
-            "snippets": [{"snippet": "Q3 Financial Audit Summary: Total revenue $4.2M, SOC2 compliance verified."}]
+            "snippets": [
+              {
+                "snippet": "Q3 Financial Audit Summary: Total revenue .2M, SOC2 compliance verified."
+              }
+            ]
           }
         }
       }
     ],
     "target_top_title": "Quarterly Financial Security Audit Q3 2026"
+  },
+  {
+    "id": "adv_q2_structdata_description",
+    "query": "developer portfolio typescript web application",
+    "category": "B",
+    "raw_results": [
+      {
+        "document": {
+          "id": "repo_distractor",
+          "structData": {
+            "title": "developer-tools-collection",
+            "html_url": "https://github.com/enriquekalven/developer-tools-collection",
+            "description": "A collection of random developer utilities in python."
+          }
+        }
+      },
+      {
+        "document": {
+          "id": "repo_portfolio",
+          "structData": {
+            "title": "portfolio",
+            "html_url": "https://github.com/enriquekalven/portfolio",
+            "description": "Personal developer portfolio web application built with TypeScript and Next.js."
+          }
+        }
+      }
+    ],
+    "target_top_title": "portfolio"
+  },
+  {
+    "id": "adv_q3_exact_phrase_ranking",
+    "query": "agent cockpit frontend ui dashboard",
+    "category": "B",
+    "raw_results": [
+      {
+        "document": {
+          "id": "repo_noisy_agent",
+          "structData": {
+            "title": "agent-starter-pack",
+            "html_url": "https://github.com/enriquekalven/agent-starter-pack",
+            "description": "Agent starter pack agent agent agent ui dashboard template frontend tools."
+          }
+        }
+      },
+      {
+        "document": {
+          "id": "repo_cockpit",
+          "structData": {
+            "title": "agent-cockpit",
+            "html_url": "https://github.com/enriquekalven/agent-cockpit",
+            "description": "Agent Cockpit Frontend Dashboard UI for monitoring autonomous agents."
+          }
+        }
+      }
+    ],
+    "target_top_title": "agent-cockpit"
+  },
+  {
+    "id": "adv_q4_gcs_url_location_match",
+    "query": "mcp bakery data cloud storage bucket us central1",
+    "category": "C",
+    "raw_results": [
+      {
+        "document": {
+          "id": "bucket_generic",
+          "structData": {
+            "title": "gs://company-analytics-data",
+            "html_url": "https://console.cloud.google.com/storage/browser/company-analytics-data",
+            "location": "US-CENTRAL1",
+            "description": "cloud storage bucket storage data"
+          }
+        }
+      },
+      {
+        "document": {
+          "id": "bucket_bakery",
+          "structData": {
+            "title": "gs://enterprise-knowledge-base-bucket",
+            "html_url": "https://console.cloud.google.com/storage/browser/enterprise-knowledge-base-bucket?project=my-gcp-project",
+            "location": "US-CENTRAL1",
+            "storage_class": "STANDARD"
+          }
+        }
+      }
+    ],
+    "target_top_title": "gs://enterprise-knowledge-base-bucket"
+  },
+  {
+    "id": "adv_q5_drive_pricing_specific",
+    "query": "bakery prices and profit margin analysis spreadsheet 2026",
+    "category": "A",
+    "raw_results": [
+      {
+        "document": {
+          "id": "doc_foot_traffic",
+          "derivedStructData": {
+            "title": "Bakery Foot Traffic & Customer Demographics (Google Doc)",
+            "link": "https://docs.google.com/document/d/1BakeryFootTrafficDemographicsReport2026/edit",
+            "snippets": [
+              {
+                "snippet": "analysis analysis analysis bakery bakery bakery profit margin margin margin"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "document": {
+          "id": "doc_pricing_sheet",
+          "derivedStructData": {
+            "title": "Bakery Prices Analysis 2026 (Google Sheet)",
+            "link": "https://docs.google.com/spreadsheets/d/1BakeryPricesAnalysisSpreadsheet2026/edit",
+            "snippets": [
+              {
+                "snippet": "Bakery Prices & Margin Analysis 2026. Sourdough Loaf .50, Croissant .25. Profit Margin: 68%."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "target_top_title": "Bakery Prices Analysis 2026 (Google Sheet)"
   }
 ]

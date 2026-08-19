@@ -57,7 +57,11 @@ def evaluate_program(code: str, benchmark_path: str) -> dict:
     start_time = time.perf_counter()
     for item in benchmark_data:
         reranked = rerank_fn(item["query"], item["raw_results"])
-        top_doc = reranked[0].get("document", {}).get("derivedStructData", {}).get("title", "")
+        top_doc_dict = reranked[0].get("document", {})
+        top_doc = (
+            top_doc_dict.get("derivedStructData", {}).get("title")
+            or top_doc_dict.get("structData", {}).get("title", "")
+        )
         if top_doc == item["target_top_title"]:
             correct_top_rank += 1
             
