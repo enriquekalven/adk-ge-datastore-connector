@@ -122,7 +122,7 @@ def _exchange_idp_token(
     project_number: Optional[str] = None,
     subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt"
 ) -> str:
-    """RFC 8693 exchange with thread-safe caching: Third-party IdP token -> Google federated access token."""
+    """Workforce Identity Federation (WIF) STS token exchange with thread-safe caching: Third-party IdP token -> Google federated access token."""
     global _cached_sts_tokens
     cache_key = f"{wif_audience}:{hash(idp_token)}"
     now = time.time()

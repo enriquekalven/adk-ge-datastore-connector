@@ -305,7 +305,7 @@ datastores:
 | :--- | :--- | :--- | :--- |
 | `USER_OAUTH`<br>`(3LO / THREE_LEGGED_OAUTH)` | **Category A**<br>(SharePoint, Jira, Drive, Salesforce) | Extracts from `ToolContext.state[auth_name]` with fallback to `CredentialManager` | Strictly **fails closed** (`AUTH_REQUIRED`) if token is missing. Never leaks ambient ADC in production (Issue #897: Fail-Closed Security). |
 | `SERVICE_ACCOUNT`<br>`(2LO / TWO_LEGGED_OAUTH / M2M)` | **Category B & C**<br>(GitHub, Slack, BigQuery, GCS) | Acquires GCP IAM / SPIFFE token via Application Default Credentials (ADC) or Agent Identity | Queries org-wide / data lake indexes autonomously with zero end-user auth prompts. |
-| `FEDERATED` | **Category A / B**<br>(Azure AD, Okta, Atlassian WIF) | RFC 8693 STS exchange (`https://sts.googleapis.com/v1/token`) | Exchanges third-party IdP token for Google federated bearer token via Workforce Identity Pool. |
+| `FEDERATED` | **Category A / B**<br>(Azure AD, Okta, Atlassian WIF) | Google STS Token Exchange (`https://sts.googleapis.com/v1/token`) | Exchanges third-party IdP token for Google federated bearer token via Workforce Identity Pool. |
 | `HYBRID_DEV` | **Localhost Development Only** | Uses user token if present, else falls back to local ADC | Strictly **blocked in managed runtimes** (`Agent Engine`, `Cloud Run`, `GAE`) via `is_managed_runtime()`. |
 
 > [!TIP]

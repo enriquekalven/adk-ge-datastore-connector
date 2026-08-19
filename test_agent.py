@@ -110,7 +110,7 @@ def test_service_account_mode_category_b_and_c():
         assert "Slack Channel #general" in result
 
 def test_federated_sts_token_exchange():
-    """Test 4: Verifies AuthMode.FEDERATED performs RFC 8693 token exchange via Google STS."""
+    """Test 4: Verifies AuthMode.FEDERATED performs Workforce Identity Federation STS token exchange via Google STS."""
     mock_context = MagicMock(spec=ToolContext)
     mock_context.state = {"azure_idp_token": "Mock_Azure_AD_JWT_Token"}
     
