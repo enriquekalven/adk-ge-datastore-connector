@@ -93,7 +93,7 @@
   },
   {
     "id": "adv_q4_gcs_url_location_match",
-    "query": "mcp bakery data cloud storage bucket us central1",
+    "query": "enterprise knowledge base cloud storage bucket us central1",
     "category": "C",
     "raw_results": [
       {
