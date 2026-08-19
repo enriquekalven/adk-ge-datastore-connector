@@ -1,6 +1,5 @@
 """Standalone Example: Google Drive Enterprise Search Agent."""
 
-import os
 from skills.google_drive.tool import search_google_drive
 
 try:

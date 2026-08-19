@@ -2,8 +2,8 @@ import argparse
 import ast
 import json
 import os
-import sys
 import time
+
 
 def evaluate_program(code: str, benchmark_path: str) -> dict:
     """Three-Tier AlphaEvolve Evaluator following official DeepMind specifications."""
@@ -35,7 +35,7 @@ def evaluate_program(code: str, benchmark_path: str) -> dict:
 
     verif_passed = 0
     verif_total = len(benchmark_data)
-    
+
     for item in benchmark_data:
         try:
             res = rerank_fn(item["query"], item["raw_results"])
@@ -53,7 +53,7 @@ def evaluate_program(code: str, benchmark_path: str) -> dict:
 
     correct_top_rank = 0
     total_queries = len(benchmark_data)
-    
+
     start_time = time.perf_counter()
     for item in benchmark_data:
         reranked = rerank_fn(item["query"], item["raw_results"])
@@ -64,13 +64,13 @@ def evaluate_program(code: str, benchmark_path: str) -> dict:
         )
         if top_doc == item["target_top_title"]:
             correct_top_rank += 1
-            
+
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
     precision = correct_top_rank / max(total_queries, 1)
     latency_penalty = min(0.2, (elapsed_ms / 50.0))
-    
+
     score = max(0.0, min(1.0, 0.5 + (precision * 0.4) - latency_penalty))
-    
+
     return {
         "score": round(score, 4),
         "insights": [
@@ -98,7 +98,7 @@ def main():
 
     with open(args.output_file, "w") as f:
         json.dump(res, f, indent=2)
-        
+
     print(f"Evaluator Execution Finished. Result: {res}")
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 # ADK Gemini Enterprise Datastore Connector
 
+[![CI](https://github.com/enriquekalven/adk-ge-datastore-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/enriquekalven/adk-ge-datastore-connector/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/badge/pypi-v1.0.0-blue.svg)](https://pypi.org/project/adk-ge-connectors/)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/enriquekalven/adk-ge-datastore-connector/blob/main/codelab.ipynb)
 [![Google Cloud ADK](https://img.shields.io/badge/Google_Cloud-ADK_2.x-4285F4?logo=googlecloud&logoColor=white)](https://github.com/google/adk-python)
 [![Gemini Enterprise](https://img.shields.io/badge/Gemini-Enterprise_Datastores-8E75B5?logo=google&logoColor=white)](https://cloud.google.com/vertex-ai)
@@ -15,6 +17,24 @@ Implements **Veer Muchandi's Generic OAuth/ACL Token Propagation Pattern**, enab
 > - [**Frequently Asked Questions (FAQ) & Identity Architecture Guide**](FAQ.md) — *Detailed breakdown of RBAC, ACLs, Google SSO, WIF, OIDC, and LDAP group synchronization.*
 > - [**10-Minute Hands-On Field Codelab**](CODELAB.md) — *Step-by-step developer tutorial with runnable verification demo.*
 > - [**Interactive Google Colab Notebook**](codelab.ipynb) — *One-click interactive notebook execution in your browser.*
+
+---
+
+## Quick Installation
+
+Install directly from **[PyPI](https://pypi.org/project/adk-ge-connectors/)**:
+
+```bash
+pip install adk-ge-connectors
+```
+
+Or install from source with development dependencies:
+
+```bash
+git clone https://github.com/enriquekalven/adk-ge-datastore-connector.git
+cd adk-ge-datastore-connector
+pip install -e ".[dev]"
+```
 
 ---
 

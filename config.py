@@ -1,10 +1,18 @@
+import logging
 import os
 import re
-import yaml
-import logging
 from enum import Enum
-from typing import List, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, ValidationError
+from typing import Any, Literal
+
+import yaml
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,22 +44,22 @@ class DatastoreBinding(BaseModel):
     category: str = Field(default="A", description="Connector category (A: User ACL / 3LO, B: SaaS Org-Wide / 2LO, C: GCP Native / 2LO)")
     location: str = Field(default="global", description="GCP Location (global, us, eu, us-central1, etc.)")
     collection: str = Field(default="default_collection", description="Discovery Engine Collection ID")
-    resource_type: Optional[Literal["engines", "dataStores"]] = Field(default=None, description="Explicit resource type in REST path")
+    resource_type: Literal["engines", "dataStores"] | None = Field(default=None, description="Explicit resource type in REST path")
     description: str = Field(default="", description="Description of the tool for the LLM")
     summarize: bool = Field(default=False, description="Whether to request backend Discovery Engine summary")
     enable_acl_probe: bool = Field(default=False, description="Enable background SA probe on 0-hits to diagnose User ACL vs Index Sync")
-    project_id: Optional[str] = Field(default=None, description="GCP Project ID override")
-    display_columns: Optional[List[str]] = Field(default=None, description="Ordered allowlist of columns for Category C serialization")
-    deep_link_template: Optional[str] = Field(default=None, description="Template URL for synthesizing deep-links from struct data")
-    idp_provider: Optional[str] = Field(default=None, description="Identity Provider name (e.g. GOOGLE, AZURE_AD, OKTA, ATLASSIAN)")
-    wif_audience: Optional[str] = Field(default=None, description="Workforce Identity Federation audience URI for STS token exchange")
-    wif_project_number: Optional[str] = Field(default=None, description="GCP Project Number for STS userProject context")
+    project_id: str | None = Field(default=None, description="GCP Project ID override")
+    display_columns: list[str] | None = Field(default=None, description="Ordered allowlist of columns for Category C serialization")
+    deep_link_template: str | None = Field(default=None, description="Template URL for synthesizing deep-links from struct data")
+    idp_provider: str | None = Field(default=None, description="Identity Provider name (e.g. GOOGLE, AZURE_AD, OKTA, ATLASSIAN)")
+    wif_audience: str | None = Field(default=None, description="Workforce Identity Federation audience URI for STS token exchange")
+    wif_project_number: str | None = Field(default=None, description="GCP Project Number for STS userProject context")
     subject_token_type: str = Field(default="urn:ietf:params:oauth:token-type:jwt", description="STS subject token type")
-    authorization_url: Optional[str] = Field(default=None, description="OAuth2 authorization endpoint for Flow B interactive challenge")
-    token_url: Optional[str] = Field(default=None, description="OAuth2 token endpoint for Flow B interactive challenge")
-    scopes: Optional[List[str]] = Field(default=None, description="List of OAuth scopes required for this datastore")
+    authorization_url: str | None = Field(default=None, description="OAuth2 authorization endpoint for Flow B interactive challenge")
+    token_url: str | None = Field(default=None, description="OAuth2 token endpoint for Flow B interactive challenge")
+    scopes: list[str] | None = Field(default=None, description="List of OAuth scopes required for this datastore")
     page_size: int = Field(default=5, ge=1, le=50, description="Max number of search results to retrieve")
-    filter: Optional[str] = Field(default=None, description="Discovery Engine filter expression (e.g. branch: main)")
+    filter: str | None = Field(default=None, description="Discovery Engine filter expression (e.g. branch: main)")
 
     @field_validator("auth_mode", mode="before")
     @classmethod
@@ -94,13 +102,13 @@ class AgentManifestSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="enterprise_knowledge_agent")
-    display_name: Optional[str] = None
-    description: Optional[str] = None
-    version: Optional[str] = None
-    entrypoint: Optional[str] = None
-    env: Optional[Dict[str, Any]] = None
-    datastores: Optional[List[DatastoreBinding]] = None
-    authorizationConfig: Optional[Dict[str, Any]] = None
+    display_name: str | None = None
+    description: str | None = None
+    version: str | None = None
+    entrypoint: str | None = None
+    env: dict[str, Any] | None = None
+    datastores: list[DatastoreBinding] | None = None
+    authorizationConfig: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_referential_integrity(self) -> "AgentManifestSchema":
@@ -123,16 +131,16 @@ def is_managed_runtime() -> bool:
     """Returns True if running in a managed cloud runtime (Agent Engine, Cloud Run, GAE)."""
     return any(bool(os.getenv(v)) for v in _MANAGED_ENV_VARS)
 
-def load_bindings(yaml_path: Optional[str] = None) -> List[DatastoreBinding]:
+def load_bindings(yaml_path: str | None = None) -> list[DatastoreBinding]:
     """Loads and validates datastore bindings from agent.yaml manifest with strict Pydantic validation."""
     if yaml_path is None:
         default_dir = os.path.dirname(os.path.abspath(__file__))
         yaml_path = os.getenv("AGENT_MANIFEST_PATH", os.path.join(default_dir, "agent.yaml"))
 
-    bindings: List[DatastoreBinding] = []
-    
+    bindings: list[DatastoreBinding] = []
+
     if os.path.exists(yaml_path):
-        with open(yaml_path, "r", encoding="utf-8") as f:
+        with open(yaml_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
 
         if raw_data and "datastores" not in raw_data and not raw_data.get("datastores"):
@@ -141,12 +149,12 @@ def load_bindings(yaml_path: Optional[str] = None) -> List[DatastoreBinding]:
         try:
             manifest = AgentManifestSchema.model_validate(raw_data)
             global_env = manifest.env or {}
-            
+
             # Export env block to os.environ so MODEL_NAME, etc. are accessible
             for k, v in global_env.items():
                 if k not in os.environ and v is not None:
                     os.environ[k] = str(v)
-            
+
             if manifest.datastores:
                 for b in manifest.datastores:
                     fields_set = b.model_fields_set
@@ -157,7 +165,7 @@ def load_bindings(yaml_path: Optional[str] = None) -> List[DatastoreBinding]:
                         updates["collection"] = os.getenv("COLLECTION", global_env["COLLECTION"])
                     if "project_id" not in fields_set:
                         updates["project_id"] = os.getenv("PROJECT_ID", global_env.get("PROJECT_ID"))
-                    
+
                     updated = b.model_copy(update=updates) if updates else b
                     bindings.append(updated)
         except ValidationError as val_err:

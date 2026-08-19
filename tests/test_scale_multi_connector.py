@@ -1,13 +1,15 @@
+import concurrent.futures
 import os
 import sys
-import time
-import pytest
-import concurrent.futures
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from google.adk.tools import ToolContext
+import pytest
 from config import AuthMode, DatastoreBinding
-from tools.datastore_search import create_enterprise_datastore_tool, _get_adc_token, _invalidate_adc_token
+from google.adk.tools import ToolContext
+from tools.datastore_search import (
+    create_enterprise_datastore_tool,
+)
+
 
 @pytest.fixture(autouse=True)
 def setup_env():
@@ -20,7 +22,7 @@ def setup_env():
 def test_enterprise_fleet_concurrency_and_per_thread_auth_isolation():
     """Simulates enterprise scale with 20 datastores and verifies per-thread token isolation."""
     bindings = []
-    
+
     # 8 Category A connectors
     for i in range(8):
         bindings.append(DatastoreBinding(
@@ -30,7 +32,7 @@ def test_enterprise_fleet_concurrency_and_per_thread_auth_isolation():
             auth_mode=AuthMode.USER_OAUTH,
             category="A"
         ))
-        
+
     # 8 Category B connectors
     for i in range(8):
         bindings.append(DatastoreBinding(
@@ -40,7 +42,7 @@ def test_enterprise_fleet_concurrency_and_per_thread_auth_isolation():
             auth_mode=AuthMode.SERVICE_ACCOUNT,
             category="B"
         ))
-        
+
     # 4 Category C connectors
     for i in range(4):
         bindings.append(DatastoreBinding(
@@ -56,11 +58,11 @@ def test_enterprise_fleet_concurrency_and_per_thread_auth_isolation():
     assert len(tools) == 20
 
     observed_headers = []
-    
+
     def mock_backend(url, json=None, headers=None, timeout=None):
         auth_hdr = headers.get("Authorization", "")
         observed_headers.append((url, auth_hdr))
-        
+
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -88,14 +90,14 @@ def test_enterprise_fleet_concurrency_and_per_thread_auth_isolation():
             tool_idx = task_id % 20
             target_tool = tools[tool_idx]
             target_binding = bindings[tool_idx]
-            
+
             mock_ctx = MagicMock(spec=ToolContext)
             mock_ctx.state = {
                 target_binding.auth_name: f"User_Token_Thread_{task_id}",
                 "user_id": f"user_{task_id}@enterprise.com",
                 "session_id": f"sess_{task_id}"
             }
-            
+
             res = target_tool(f"Query {task_id}", tool_context=mock_ctx)
             return task_id, target_binding.auth_mode, res
 
@@ -105,7 +107,7 @@ def test_enterprise_fleet_concurrency_and_per_thread_auth_isolation():
 
         assert len(results) == 100
         assert len(observed_headers) == 100
-        
+
         # Verify Cat A used per-thread token, and Cat B/C used ADC token
         for url, auth_hdr in observed_headers:
             if "cat-a" in url:

@@ -1,12 +1,14 @@
+import argparse
+import json
+import logging
 import os
 import sys
-import json
-import argparse
-import logging
-from config import load_bindings, AuthMode, is_managed_runtime
-from tools.datastore_search import _resolve_location, _get_http_session, _classify_error
+
+from config import AuthMode, is_managed_runtime, load_bindings
 from google.auth import default
 from google.auth.transport import requests as auth_requests
+
+from tools.datastore_search import _classify_error, _get_http_session, _resolve_location
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -59,7 +61,7 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
     project_id = os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT"))
     if not project_id and bindings and bindings[0].project_id:
         project_id = bindings[0].project_id
-        
+
     report["gcp_project_id"] = project_id
     if not project_id:
         if not json_output:
@@ -77,7 +79,7 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
         adc_token = creds.token
         report["adc_valid"] = True
         if not json_output:
-            print(f"  ✅ ADC Credentials valid (Service Account / User identity active)")
+            print("  ✅ ADC Credentials valid (Service Account / User identity active)")
     except Exception as e:
         if not json_output:
             print(f"  ⚠️  ADC Credential check warning: {e}")
@@ -98,9 +100,9 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
     session = _get_http_session()
 
     from concurrent.futures import ThreadPoolExecutor
-    from typing import Dict, Any
+    from typing import Any
 
-    def probe_single_binding(b) -> Dict[str, Any]:
+    def probe_single_binding(b) -> dict[str, Any]:
         binding_report = {
             "tool_name": b.tool_name,
             "engine_id": b.engine_id,
@@ -115,7 +117,7 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
             target_proj = b.project_id or project_id or "default-project"
             res_type = b.resource_type or ("dataStores" if "dataStore" in b.engine_id else "engines")
             url = f"https://{host}/v1alpha/projects/{target_proj}/locations/{norm_loc}/collections/{b.collection}/{res_type}/{b.engine_id}/servingConfigs/default_search:search"
-            
+
             probe_token = test_token if (b.auth_mode == AuthMode.USER_OAUTH and test_token) else adc_token
             if not probe_token:
                 if b.auth_mode == AuthMode.USER_OAUTH:
@@ -132,10 +134,10 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
                 "X-Goog-User-Project": target_proj
             }
             payload = {"query": "diagnostic_health_check_probe", "pageSize": 1}
-            
+
             resp = session.post(url, json=payload, headers=headers, timeout=(3.05, 5.0))
             binding_report["http_status"] = resp.status_code
-            
+
             if resp.status_code == 200:
                 binding_report["status"] = "PASS"
                 binding_report["message"] = "Endpoint reachable and authorized (Status 200 OK)"
@@ -168,7 +170,7 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
         report["bindings"].append(binding_report)
         if binding_report["status"] == "FAIL" or binding_report["status"] == "ERROR":
             all_ok = False
-            
+
         if not json_output:
             print(f"\n--- Probing: {b.tool_name} ({b.engine_id}) ---")
             if binding_report["status"] == "PASS":
@@ -194,7 +196,7 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
         else:
             print("  ⚠️  SOME CHECKS REQUIRE ATTENTION (Review remedial steps above)")
         print("=" * 65 + "\n")
-        
+
     return all_ok
 
 if __name__ == "__main__":
@@ -203,6 +205,6 @@ if __name__ == "__main__":
     parser.add_argument("--token", help="Test OAuth bearer token for Category A end-to-end probing")
     parser.add_argument("--json", action="store_true", help="Output diagnostic results as JSON")
     args = parser.parse_args()
-    
+
     success = run_diagnostics(args.manifest, test_token=args.token, json_output=args.json)
     sys.exit(0 if success else 1)

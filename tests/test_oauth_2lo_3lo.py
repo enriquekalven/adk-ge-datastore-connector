@@ -1,16 +1,14 @@
 import os
-import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
 import requests
-from unittest.mock import patch, MagicMock
-
+from config import AuthMode, DatastoreBinding
 from google.adk.tools import ToolContext
-from config import AuthMode, DatastoreBinding, load_bindings
 from tools.datastore_search import (
     create_enterprise_datastore_tool,
-    query_enterprise_datastore,
-    resolve_credential
 )
+
 
 @pytest.fixture(autouse=True)
 def clean_environment():
@@ -82,7 +80,7 @@ class TestThreeLeggedOAuth:
 
         mock_context = MagicMock(spec=ToolContext)
         mock_context.state = {} # Empty state
-        
+
         # ToolContext has get_auth_credential method from ADK CredentialManager
         mock_cred = MagicMock()
         mock_cred.token = "ya29.CredentialManager_Vaulted_3LO_Token"

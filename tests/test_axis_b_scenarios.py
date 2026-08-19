@@ -1,21 +1,20 @@
-import pytest
 import json
-import sys
 import logging
+import os
+import sys
 from unittest.mock import MagicMock, patch
 
-import os
 REPO_PATH = os.path.dirname(os.path.abspath(__file__))
 if REPO_PATH not in sys.path:
     sys.path.insert(0, REPO_PATH)
 
+import tools.doctor as doctor
 from config import AuthMode, DatastoreBinding
 from tools.datastore_search import (
     _classify_error,
-    execute_datastore_query,
-    create_enterprise_datastore_tool
+    create_enterprise_datastore_tool,
 )
-import tools.doctor as doctor
+
 
 def make_mock_response(status_code: int, error_details: list = None, error_status: str = None, message: str = "Error"):
     """Helper to construct realistic Google Cloud Discovery Engine HTTP error responses."""
@@ -132,7 +131,7 @@ class TestAxisBPlatformScenarios:
         with caplog.at_level(logging.INFO), \
              patch("tools.datastore_search._get_adc_token", return_value="sa_probe_token"), \
              patch("requests.Session.post") as mock_post:
-            
+
             mock_post.side_effect = [
                 MagicMock(status_code=200, json=lambda: {"results": []}),
                 MagicMock(status_code=200, json=lambda: {"results": []})
@@ -147,7 +146,7 @@ class TestAxisBPlatformScenarios:
         with caplog.at_level(logging.INFO), \
              patch("tools.datastore_search._get_adc_token", return_value="sa_probe_token"), \
              patch("requests.Session.post") as mock_post:
-            
+
             mock_post.side_effect = [
                 MagicMock(status_code=200, json=lambda: {"results": []}),
                 MagicMock(status_code=200, json=lambda: {"results": [{"document": {"id": "doc1"}}]})
@@ -179,7 +178,7 @@ datastores:
         with patch("tools.doctor.default", return_value=(mock_cred, "test-project")), \
              patch("tools.doctor._get_http_session") as mock_session:
             mock_session.return_value.post.return_value = mock_resp
-            
+
             report_capture = {}
             with patch("builtins.print") as mock_print:
                 doctor.run_diagnostics(yaml_path=str(manifest_file), json_output=True)

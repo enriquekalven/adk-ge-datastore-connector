@@ -1,7 +1,5 @@
 import os
 import sys
-import json
-import time
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
@@ -176,18 +174,18 @@ def rerank_documents(query: str, raw_results: List[Dict[str, Any]]) -> List[Dict
 
 def run_simulation():
     benchmark_path = os.path.join(CURRENT_DIR, "benchmark_data.json")
-    
+
     print("==================================================")
     print("   AlphaEvolve Reranking Evolutionary Search Simulation")
     print("==================================================")
-    
+
     candidates = [
         ("Generation 0 (Baseline Term Frequency)", CANDIDATE_GEN_0),
         ("Generation 5 (TF + Title Prefix Mutation)", CANDIDATE_GEN_5),
         ("Generation 12 (BM25 Saturation + Phrase Match)", CANDIDATE_GEN_12),
         ("Generation 20 (Pre-Commit Staged Hillclimbed Winner)", CANDIDATE_GEN_20)
     ]
-    
+
     trajectory = []
     for gen_name, code in candidates:
         eval_result = evaluate_program(code, benchmark_path)
@@ -200,7 +198,7 @@ def run_simulation():
         print(f"   • Overall Score: {eval_result['score']}")
         for ins in eval_result["insights"]:
             print(f"   • {ins['label'].capitalize()}: {ins['text']}")
-            
+
     print("\n==================================================")
     print("   Evolutionary Search Trajectory Summary")
     print("==================================================")

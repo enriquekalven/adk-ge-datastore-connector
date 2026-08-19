@@ -1,6 +1,5 @@
 """Standalone Example: Jira Issue Tracking & Engineering Agent."""
 
-import os
 from skills.jira.tool import search_jira
 
 try:

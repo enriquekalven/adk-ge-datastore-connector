@@ -1,6 +1,5 @@
 """Standalone Example: Slack Community & Discussion Agent."""
 
-import os
 from skills.slack.tool import search_slack
 
 try:

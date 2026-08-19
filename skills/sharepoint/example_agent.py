@@ -1,6 +1,5 @@
 """Standalone Example: SharePoint Enterprise Concierge Agent."""
 
-import os
 from skills.sharepoint.tool import search_sharepoint
 
 try:

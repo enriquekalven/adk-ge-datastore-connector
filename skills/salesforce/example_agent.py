@@ -1,6 +1,5 @@
 """Standalone Example: Salesforce Revenue & Pipeline Agent."""
 
-import os
 from skills.salesforce.tool import search_salesforce
 
 try:

@@ -1,6 +1,5 @@
 """Standalone Example: BigQuery Analytics & Data Warehouse Agent."""
 
-import os
 from skills.bigquery.tool import search_bigquery
 
 try:

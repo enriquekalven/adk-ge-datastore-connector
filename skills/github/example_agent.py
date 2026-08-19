@@ -1,6 +1,5 @@
 """Standalone Example: GitHub Codebase & Repo Search Agent."""
 
-import os
 from skills.github.tool import search_github
 
 try:

@@ -4,7 +4,7 @@ Category C: 2-Legged OAuth (2LO) Structured Data with Column Filtering.
 """
 
 import os
-from typing import Optional, List
+
 from config import AuthMode
 from tools.datastore_search import execute_datastore_query
 
@@ -19,11 +19,11 @@ except ImportError:
 @tool
 def search_bigquery(
     query: str,
-    tool_context: Optional[ToolContext] = None,
-    engine_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    location: Optional[str] = None,
-    display_columns: Optional[List[str]] = None
+    tool_context: ToolContext | None = None,
+    engine_id: str | None = None,
+    project_id: str | None = None,
+    location: str | None = None,
+    display_columns: list[str] | None = None
 ) -> str:
     """Searches BigQuery structured analytics tables and enterprise data lake records.
     
@@ -44,7 +44,7 @@ def search_bigquery(
     target_engine = engine_id or os.environ.get("BIGQUERY_ENGINE_ID", "bigquery-analytics-engine")
     columns = display_columns or ["customer_id", "region", "q3_revenue", "product_line"]
     deep_link = f"https://console.cloud.google.com/bigquery?project={project_id or 'my-gcp-project'}"
-    
+
     return execute_datastore_query(
         query=query,
         tool_context=tool_context,

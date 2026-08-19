@@ -1,7 +1,11 @@
 import os
-from google.adk.agents import Agent
+
 from config import load_bindings
-from tools.datastore_search import query_enterprise_datastore, create_enterprise_datastore_tool
+from google.adk.agents import Agent
+from tools.datastore_search import (
+    create_enterprise_datastore_tool,
+    query_enterprise_datastore,
+)
 
 # Universal Enterprise System Prompt
 SYSTEM_PROMPT = """You are an Enterprise Knowledge Assistant powered by Gemini Enterprise and Google Cloud ADK.
@@ -39,7 +43,7 @@ Your primary objective is to answer user inquiries by securely searching interna
 def create_agent(yaml_path: str = "agent.yaml") -> Agent:
     """Factory function to instantiate and configure the Enterprise ADK Agent from declarative bindings."""
     model_name = os.getenv("MODEL_NAME", "gemini-2.0-flash")
-    
+
     # Load declarative datastore bindings from manifest
     bindings = load_bindings(yaml_path)
     tools = [create_enterprise_datastore_tool(b) for b in bindings] if bindings else [query_enterprise_datastore]
@@ -51,7 +55,7 @@ def create_agent(yaml_path: str = "agent.yaml") -> Agent:
         tools=tools,
         model=model_name,
     )
-    
+
     return agent
 
 # Primary export for ADK CLI / Reasoning Engine runtime runner

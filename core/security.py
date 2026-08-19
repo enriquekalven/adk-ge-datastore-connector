@@ -1,5 +1,4 @@
-import re
-from typing import Optional, Any
+from typing import Any
 
 # Strict regional host allowlist to prevent SSRF and token exfiltration
 _ALLOWED_HOSTS = {
@@ -25,7 +24,7 @@ def resolve_host_for_location(location: str) -> str:
         )
     return _ALLOWED_HOSTS[loc_key]
 
-def sanitize_link(link: Optional[str]) -> Optional[str]:
+def sanitize_link(link: str | None) -> str | None:
     """Sanitizes outgoing URLs to block javascript:, data:, and malicious URI schemes."""
     if not link or not isinstance(link, str):
         return None

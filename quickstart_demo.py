@@ -4,13 +4,11 @@
 Demonstrates the Veer Muchandi OAuth/ACL Token Propagation Pattern for ADK 2.x Agents.
 """
 
-import os
-import sys
-import json
 import logging
+import sys
 from unittest.mock import MagicMock, patch
 
-from config import AuthMode, DatastoreBinding
+from config import AuthMode
 from tools.datastore_search import execute_datastore_query
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -35,7 +33,7 @@ def run_codelab_demo(live_mode: bool = False):
         with patch("tools.datastore_search._get_http_session") as mock_session_fn:
             mock_session = MagicMock()
             mock_session_fn.return_value = mock_session
-            
+
             # -------------------------------------------------------------------------
             # Scenario 1: Alice (HR Manager with Valid OAuth Token)
             # -------------------------------------------------------------------------
@@ -58,7 +56,7 @@ def run_codelab_demo(live_mode: bool = False):
                 }]
             }
             mock_session.post.return_value = resp_alice
-            
+
             res_alice = execute_datastore_query(
                 query="2026 Executive Payroll and Compensation Strategy",
                 tool_context=alice_ctx,
@@ -77,7 +75,7 @@ def run_codelab_demo(live_mode: bool = False):
             print("👉 [Step 2] Executing Query with Missing Token (Fail-Closed Defense Issue #897)...")
             anon_ctx = MockSessionContext(token=None, email="anonymous@example.com")
             print(f"   Context State: {anon_ctx.state}")
-            
+
             res_anon = execute_datastore_query(
                 query="Confidential HR Compensation Strategy",
                 tool_context=anon_ctx,
@@ -97,7 +95,7 @@ def run_codelab_demo(live_mode: bool = False):
             # -------------------------------------------------------------------------
             print("\n👉 [Step 3] Executing Category C BigQuery Structured Data Search...")
             bq_ctx = MockSessionContext(token=None, email="analyst@example.com")
-            
+
             resp_bq = MagicMock()
             resp_bq.status_code = 200
             resp_bq.json.return_value = {
@@ -115,7 +113,7 @@ def run_codelab_demo(live_mode: bool = False):
                 }]
             }
             mock_session.post.return_value = resp_bq
-            
+
             with patch("tools.datastore_search._get_adc_token", return_value="mock_adc_token"):
                 res_bq = execute_datastore_query(
                     query="Q3 Revenue by Customer Region",

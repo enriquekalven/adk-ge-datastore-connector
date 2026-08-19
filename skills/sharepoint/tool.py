@@ -4,7 +4,7 @@ Category A: User-level 3-Legged OAuth (3LO) ACL Enforcement.
 """
 
 import os
-from typing import Optional
+
 from config import AuthMode
 from tools.datastore_search import execute_datastore_query
 
@@ -19,10 +19,10 @@ except ImportError:
 @tool
 def search_sharepoint(
     query: str,
-    tool_context: Optional[ToolContext] = None,
-    engine_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    location: Optional[str] = None
+    tool_context: ToolContext | None = None,
+    engine_id: str | None = None,
+    project_id: str | None = None,
+    location: str | None = None
 ) -> str:
     """Searches Microsoft SharePoint Online documents, site libraries, and team folders.
     

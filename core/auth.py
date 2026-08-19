@@ -1,26 +1,27 @@
-import time
 import logging
 import threading
-import requests
+import time
 from datetime import timezone
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Any
+
+import requests
+from config import AuthMode
 from google.auth import default
 from google.auth.transport import requests as auth_requests
-from config import AuthMode, is_managed_runtime
 
 logger = logging.getLogger(__name__)
 
 # Global persistent session with connection pooling
-_http_session: Optional[requests.Session] = None
+_http_session: requests.Session | None = None
 _session_lock = threading.Lock()
 
 # Thread-safe ADC Token Cache
-_cached_adc_token: Optional[str] = None
+_cached_adc_token: str | None = None
 _cached_adc_expiry: float = 0.0
 _adc_lock = threading.Lock()
 
 # Thread-safe STS Token Cache for Federated Tokens
-_cached_sts_tokens: Dict[str, Tuple[str, float]] = {}
+_cached_sts_tokens: dict[str, tuple[str, float]] = {}
 _sts_lock = threading.Lock()
 
 def get_http_session() -> requests.Session:
@@ -29,8 +30,8 @@ def get_http_session() -> requests.Session:
     if _http_session is None:
         with _session_lock:
             if _http_session is None:
-                from urllib3.util import Retry
                 from requests.adapters import HTTPAdapter
+                from urllib3.util import Retry
                 session = requests.Session()
                 retries = Retry(
                     total=2,
@@ -45,14 +46,14 @@ def get_http_session() -> requests.Session:
                 _http_session = session
     return _http_session
 
-def get_adc_token() -> Optional[str]:
+def get_adc_token() -> str | None:
     """Fetches and caches local Application Default Credentials (ADC) thread-safely with UTC normalization."""
     global _cached_adc_token, _cached_adc_expiry
     now = time.time()
-    
+
     if _cached_adc_token and now < _cached_adc_expiry:
         return _cached_adc_token
-        
+
     with _adc_lock:
         if _cached_adc_token and now < _cached_adc_expiry:
             return _cached_adc_token
@@ -61,7 +62,7 @@ def get_adc_token() -> Optional[str]:
             req = auth_requests.Request()
             creds.refresh(req)
             _cached_adc_token = creds.token
-            
+
             if creds.expiry:
                 expiry_dt = creds.expiry
                 if expiry_dt.tzinfo is None:
@@ -69,23 +70,23 @@ def get_adc_token() -> Optional[str]:
                 _cached_adc_expiry = expiry_dt.timestamp() - 60
             else:
                 _cached_adc_expiry = now + 3500
-                
+
             return _cached_adc_token
         except Exception as e:
             logger.error("Failed to refresh Google ADC token: %s", e)
             return None
 
-def exchange_federated_token_sts(external_idp_token: str, project_number: str = "123456789012") -> Optional[str]:
+def exchange_federated_token_sts(external_idp_token: str, project_number: str = "123456789012") -> str | None:
     """Exchanges an external IdP OAuth access token for a short-lived Google STS token via WIF."""
     global _cached_sts_tokens
     now = time.time()
-    
+
     with _sts_lock:
         if external_idp_token in _cached_sts_tokens:
             token, exp = _cached_sts_tokens[external_idp_token]
             if now < exp:
                 return token
-                
+
     sts_url = "https://sts.googleapis.com/v1/token"
     payload = {
         "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -95,7 +96,7 @@ def exchange_federated_token_sts(external_idp_token: str, project_number: str = 
         "subject_token": external_idp_token,
         "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
     }
-    
+
     session = get_http_session()
     try:
         resp = session.post(sts_url, data=payload, timeout=5)
@@ -110,28 +111,28 @@ def exchange_federated_token_sts(external_idp_token: str, project_number: str = 
         logger.warning("Google STS Token Exchange returned non-200 (%s): %s", resp.status_code, resp.text)
     except Exception as e:
         logger.error("Google STS Token Exchange failed: %s", e)
-        
+
     return None
 
-def extract_user_token(tool_context: Optional[Any], auth_name: str, federated_sts: bool = False) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def extract_user_token(tool_context: Any | None, auth_name: str, federated_sts: bool = False) -> tuple[str | None, str | None, str | None]:
     """Extracts user OAuth token, user_id, and session_id from ToolContext.state."""
     user_token = None
     user_id = None
     session_id = None
-    
+
     if tool_context and hasattr(tool_context, "state") and isinstance(tool_context.state, dict):
         user_token = tool_context.state.get(auth_name)
         user_id = tool_context.state.get("user_email") or tool_context.state.get("user_id")
         session_id = tool_context.state.get("session_id")
-        
+
     if user_token and federated_sts:
         sts_token = exchange_federated_token_sts(user_token)
         if sts_token:
             user_token = sts_token
-            
+
     return user_token, user_id, session_id
 
-def extract_agent_identity_token(auth_name: str, auth_mode: Union[AuthMode, str]) -> Optional[str]:
+def extract_agent_identity_token(auth_name: str, auth_mode: AuthMode | str) -> str | None:
     """Retrieves 3LO delegated token or 2LO client credentials from Google Agent Identity CredentialManager."""
     try:
         from google.adk.auth import CredentialManager

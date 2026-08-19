@@ -4,7 +4,7 @@ Category B: Organization-Wide Service Account (2LO) Authentication.
 """
 
 import os
-from typing import Optional
+
 from config import AuthMode
 from tools.datastore_search import execute_datastore_query
 
@@ -19,10 +19,10 @@ except ImportError:
 @tool
 def search_slack(
     query: str,
-    tool_context: Optional[ToolContext] = None,
-    engine_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    location: Optional[str] = None
+    tool_context: ToolContext | None = None,
+    engine_id: str | None = None,
+    project_id: str | None = None,
+    location: str | None = None
 ) -> str:
     """Searches Slack Enterprise Grid channels, discussion threads, and announcements.
     

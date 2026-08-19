@@ -1,7 +1,5 @@
-import os
-import sys
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from google.adk.tools import ToolContext
 from tools.datastore_search import query_enterprise_datastore
@@ -32,7 +30,7 @@ def mock_discovery_engine_backend(url, json=None, headers=None, timeout=None):
     """
     auth_header = headers.get("Authorization", "")
     token = auth_header.replace("Bearer ", "").strip()
-    
+
     # Filter documents on the server side based on user token ACL permissions
     filtered_results = []
     for item in MOCK_DATASTORE_INDEX:
@@ -46,7 +44,7 @@ def mock_discovery_engine_backend(url, json=None, headers=None, timeout=None):
                     }
                 }
             })
-            
+
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"results": filtered_results}
@@ -59,12 +57,12 @@ class TestACLTokenPropagation(unittest.TestCase):
         """User A (Alice - HR Manager) passes token_alice_hr_access_123 and sees HR docs."""
         alice_context = MagicMock(spec=ToolContext)
         alice_context.state = {"enterprise_oauth": "token_alice_hr_access_123"}
-        
+
         output = query_enterprise_datastore("payroll and architecture", tool_context=alice_context)
-        
+
         print("\n--- Alice (HR Manager) Query Output ---")
         print(output)
-        
+
         # Verify Alice gets both HR Payroll and Architecture docs
         self.assertIn("Executive Compensation & Payroll", output)
         self.assertIn("Cloud ADK System Architecture Guide", output)
@@ -75,12 +73,12 @@ class TestACLTokenPropagation(unittest.TestCase):
         """User B (Bob - Junior Dev) passes token_bob_dev_access_456 and is blocked from HR docs."""
         bob_context = MagicMock(spec=ToolContext)
         bob_context.state = {"enterprise_oauth": "token_bob_dev_access_456"}
-        
+
         output = query_enterprise_datastore("payroll and architecture", tool_context=bob_context)
-        
+
         print("\n--- Bob (Junior Dev) Query Output ---")
         print(output)
-        
+
         # Verify Bob receives Architecture docs BUT HR Payroll docs are completely filtered out!
         self.assertNotIn("Executive Compensation & Payroll", output)
         self.assertIn("Cloud ADK System Architecture Guide", output)
