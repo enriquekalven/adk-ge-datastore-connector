@@ -216,7 +216,7 @@ def _serialize_struct(struct: dict, display_columns: Optional[List[str]] = None)
     reserved = {"title", "link", "url", "html_url", "description", "name"}
     rows = []
     
-    # 1. Prioritize display_columns allowlist if specified
+    # 1. Prioritize display_columns if specified
     if display_columns:
         for col in display_columns:
             if len(rows) >= 12:
@@ -225,7 +225,7 @@ def _serialize_struct(struct: dict, display_columns: Optional[List[str]] = None)
                 val_str = json.dumps(struct[col]) if isinstance(struct[col], (dict, list)) else str(struct[col])
                 rows.append(f"{col}: {val_str[:200]}")
                 
-    # 2. Add remaining columns up to 12
+    # 2. Add remaining non-reserved columns up to 12
     for k, v in struct.items():
         if len(rows) >= 12:
             break
@@ -563,8 +563,8 @@ def execute_datastore_query(
             
         logger.info(json.dumps({
             "jsonPayload_marker": "ge_connector",
-            "user_id": user_id,
-            "session_id": session_id,
+            "user_id": str(user_id) if user_id is not None else "anonymous",
+            "session_id": str(session_id) if session_id is not None else "default_session",
             "engine_id": target_engine_id,
             "status": 200,
             "result_count": len(formatted_excerpts),
@@ -590,6 +590,39 @@ def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
     """Queries a secure Gemini Enterprise connected datastore using the user's active session OAuth credentials."""
     return execute_datastore_query(query=query, tool_context=tool_context)
 
+class DatastoreSearchTool:
+    """Pickle-serializable ADK Datastore Search Tool Callable for Agent Engine deployments."""
+    def __init__(self, binding: DatastoreBinding):
+        self.binding = binding
+        self.__name__ = binding.tool_name
+        self.__doc__ = binding.description
+
+    def __call__(self, query: str, tool_context: ToolContext) -> str:
+        return execute_datastore_query(
+            query=query,
+            tool_context=tool_context,
+            engine_id=self.binding.engine_id,
+            auth_name=self.binding.auth_name,
+            auth_mode=self.binding.auth_mode,
+            project_id=self.binding.project_id,
+            location=self.binding.location,
+            collection=self.binding.collection,
+            category=self.binding.category,
+            summarize=self.binding.summarize,
+            enable_acl_probe=self.binding.enable_acl_probe,
+            display_columns=self.binding.display_columns,
+            deep_link_template=self.binding.deep_link_template,
+            wif_audience=self.binding.wif_audience,
+            wif_project_number=self.binding.wif_project_number,
+            subject_token_type=self.binding.subject_token_type,
+            scopes=self.binding.scopes,
+            authorization_url=self.binding.authorization_url,
+            token_url=self.binding.token_url,
+            resource_type=self.binding.resource_type,
+            page_size=self.binding.page_size,
+            filter_expr=self.binding.filter,
+        )
+
 def create_enterprise_datastore_tool(
     binding_or_engine_id: Union[DatastoreBinding, str],
     auth_name: str = "enterprise_oauth",
@@ -614,7 +647,7 @@ def create_enterprise_datastore_tool(
     filter_expr: Optional[str] = None,
     project_id: Optional[str] = None,
     allow_adc_fallback: Optional[bool] = None,
-) -> Callable:
+) -> DatastoreSearchTool:
     """Tool Factory: Creates an independent, thread-safe ADK datastore search tool for multi-connector agents."""
     if isinstance(binding_or_engine_id, DatastoreBinding):
         binding = binding_or_engine_id
@@ -647,35 +680,4 @@ def create_enterprise_datastore_tool(
             project_id=project_id
         )
 
-    tool_name = binding.tool_name
-    tool_desc = binding.description
-
-    def custom_datastore_tool(query: str, tool_context: ToolContext) -> str:
-        return execute_datastore_query(
-            query=query,
-            tool_context=tool_context,
-            engine_id=binding.engine_id,
-            auth_name=binding.auth_name,
-            auth_mode=binding.auth_mode,
-            project_id=binding.project_id,
-            location=binding.location,
-            collection=binding.collection,
-            category=binding.category,
-            summarize=binding.summarize,
-            enable_acl_probe=binding.enable_acl_probe,
-            display_columns=binding.display_columns,
-            deep_link_template=binding.deep_link_template,
-            wif_audience=binding.wif_audience,
-            wif_project_number=binding.wif_project_number,
-            subject_token_type=binding.subject_token_type,
-            scopes=binding.scopes,
-            authorization_url=binding.authorization_url,
-            token_url=binding.token_url,
-            resource_type=binding.resource_type,
-            page_size=binding.page_size,
-            filter_expr=binding.filter,
-        )
-
-    custom_datastore_tool.__name__ = tool_name
-    custom_datastore_tool.__doc__ = tool_desc
-    return tool(custom_datastore_tool)
+    return DatastoreSearchTool(binding)
