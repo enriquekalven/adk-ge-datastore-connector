@@ -236,5 +236,32 @@ def test_doctor_cli_json_mode():
     status = run_diagnostics("agent.yaml", json_output=True)
     assert status in (True, False)
 
+def test_2lo_and_3lo_auth_mode_normalization():
+    """Test 12: Verifies DatastoreBinding normalizes 2LO, 3LO, M2M, and explicit grant strings."""
+    binding_2lo = DatastoreBinding(
+        tool_name="test_github_2lo",
+        engine_id="github-engine",
+        auth_mode="2LO",
+        category="B"
+    )
+    assert binding_2lo.auth_mode == AuthMode.SERVICE_ACCOUNT
+
+    binding_3lo = DatastoreBinding(
+        tool_name="test_drive_3lo",
+        engine_id="drive-engine",
+        auth_mode="3LO",
+        auth_name="drive_oauth",
+        category="A"
+    )
+    assert binding_3lo.auth_mode == AuthMode.USER_OAUTH
+
+    binding_m2m = DatastoreBinding(
+        tool_name="test_gcs_m2m",
+        engine_id="gcs-engine",
+        auth_mode="CLIENT_CREDENTIALS",
+        category="C"
+    )
+    assert binding_m2m.auth_mode == AuthMode.SERVICE_ACCOUNT
+
 if __name__ == "__main__":
     sys.exit(pytest.main(["-v", __file__]))
