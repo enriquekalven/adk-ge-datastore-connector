@@ -13,6 +13,7 @@ from config import (
     AuthMode,
     DatastoreBinding,
     is_managed_runtime,
+    load_bindings,
     load_manifest_from_yaml,
 )
 from tools.datastore_search import (
@@ -32,6 +33,7 @@ __all__ = [
     "doctor_probe",
     "execute_datastore_query",
     "is_managed_runtime",
+    "load_bindings",
     "load_manifest_from_yaml",
     "query_enterprise_datastore",
     "run_doctor_cli",

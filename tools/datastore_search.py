@@ -46,7 +46,8 @@ _cached_adc_token: str | None = None
 _cached_adc_expiry: float = 0.0
 _adc_lock = threading.Lock()
 
-# Thread-safe STS Token Cache for Federated Tokens
+# Thread-safe STS Token Cache for Federated Tokens with capacity limit & TTL eviction
+_MAX_STS_CACHE_ENTRIES = 1000
 _cached_sts_tokens: dict[str, tuple[str, float]] = {}
 _sts_lock = threading.Lock()
 
@@ -123,9 +124,11 @@ def _exchange_idp_token(
     project_number: str | None = None,
     subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt"
 ) -> str:
-    """Workforce Identity Federation (WIF) STS token exchange with thread-safe caching: Third-party IdP token -> Google federated access token."""
+    """Workforce Identity Federation (WIF) STS token exchange with bounded thread-safe caching."""
     global _cached_sts_tokens
-    cache_key = f"{wif_audience}:{hash(idp_token)}"
+    import hashlib
+    token_hash = hashlib.sha256(idp_token.encode("utf-8")).hexdigest()
+    cache_key = f"{wif_audience}:{token_hash}"
     now = time.time()
 
     with _sts_lock:
@@ -133,6 +136,7 @@ def _exchange_idp_token(
             tok, exp = _cached_sts_tokens[cache_key]
             if now < exp:
                 return tok
+            del _cached_sts_tokens[cache_key]
 
     payload = {
         "grantType": "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -155,12 +159,19 @@ def _exchange_idp_token(
     expires_in = res_data.get("expires_in", 3600)
 
     with _sts_lock:
+        if len(_cached_sts_tokens) >= _MAX_STS_CACHE_ENTRIES:
+            expired_keys = [k for k, (_, exp) in _cached_sts_tokens.items() if exp <= now]
+            for k in expired_keys:
+                del _cached_sts_tokens[k]
+            if len(_cached_sts_tokens) >= _MAX_STS_CACHE_ENTRIES:
+                oldest_key = next(iter(_cached_sts_tokens))
+                del _cached_sts_tokens[oldest_key]
         _cached_sts_tokens[cache_key] = (access_token, now + min(expires_in - 60, 3000))
 
     return access_token
 
 def resolve_credential(
-    auth_mode: AuthMode,
+    auth_mode: AuthMode | str,
     state_token: str | None,
     auth_name: str,
     wif_audience: str | None = None,
@@ -168,12 +179,14 @@ def resolve_credential(
     subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt"
 ) -> tuple[str | None, str]:
     """Resolves authentication token based on explicit AuthMode with WIF federation support."""
-    if auth_mode is AuthMode.USER_OAUTH:
+    mode_str = auth_mode.value if isinstance(auth_mode, AuthMode) else str(auth_mode).upper().strip()
+
+    if mode_str in ("USER_OAUTH", "THREE_LEGGED_OAUTH", "3LO", "3-LEGGED", "USER_DELEGATED"):
         if not state_token:
             return None, "AUTH_REQUIRED"
         return state_token, "USER_OAUTH"
 
-    if auth_mode is AuthMode.FEDERATED:
+    if mode_str in ("FEDERATED", "WIF"):
         if not state_token:
             return None, "AUTH_REQUIRED"
         if not wif_audience:
@@ -185,7 +198,7 @@ def resolve_credential(
             logger.error(f"STS token exchange failed for '{auth_name}': {err}")
             return None, f"STS_EXCHANGE_ERROR: {err}"
 
-    if auth_mode is AuthMode.SERVICE_ACCOUNT:
+    if mode_str in ("SERVICE_ACCOUNT", "TWO_LEGGED_OAUTH", "2LO", "2-LEGGED", "M2M", "CLIENT_CREDENTIALS"):
         try:
             token = _get_adc_token()
             return token, "SERVICE_ACCOUNT"
@@ -193,7 +206,7 @@ def resolve_credential(
             logger.error(f"Failed to acquire Service Account / ADC token: {e}")
             return None, "ADC_ACQUISITION_FAILED"
 
-    if auth_mode is AuthMode.HYBRID_DEV:
+    if mode_str == "HYBRID_DEV":
         if is_managed_runtime():
             raise RuntimeError(
                 "SEC-FATAL: AuthMode.HYBRID_DEV is strictly forbidden in managed cloud runtimes. "
@@ -267,14 +280,39 @@ _REASON_REMEDIATION = {
 def _classify_error(response: requests.Response) -> tuple[str, str, str]:
     """Parses Discovery Engine HTTP error body to isolate Branch A (User ACL) vs Branch B (Scope / IAM / Binding)."""
     status_code = response.status_code
+    err_json = {}
     try:
-        err_json = response.json().get("error", {})
+        raw_json = response.json()
+        if isinstance(raw_json, dict):
+            err_val = raw_json.get("error")
+            if isinstance(err_val, dict):
+                err_json = err_val
     except Exception:
         err_json = {}
 
-    details = err_json.get("details", [])
-    reason_code = next((d.get("reason") for d in details if isinstance(d, dict) and d.get("reason")), err_json.get("status", f"HTTP_{status_code}"))
-    msg = err_json.get("message", response.text[:200])
+    details = err_json.get("details", []) if isinstance(err_json.get("details"), list) else []
+    reason_code = next((d.get("reason") for d in details if isinstance(d, dict) and isinstance(d.get("reason"), str)), None)
+    if not reason_code:
+        status_val = err_json.get("status")
+        if isinstance(status_val, str):
+            reason_code = status_val
+
+    msg = err_json.get("message")
+    if not isinstance(msg, str):
+        msg = getattr(response, "text", "")[:200]
+
+    if not reason_code or reason_code in (f"HTTP_{status_code}", "PERMISSION_DENIED", "FORBIDDEN"):
+        text_lower = (str(msg) + " " + getattr(response, "text", "")).lower()
+        if "disabled" in text_lower or "has not been used in project" in text_lower:
+            reason_code = "SERVICE_DISABLED"
+        elif "scope" in text_lower:
+            reason_code = "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
+        elif "permission denied" in text_lower or "iam" in text_lower:
+            reason_code = "IAM_PERMISSION_DENIED"
+        elif "userproject" in text_lower or "user project" in text_lower:
+            reason_code = "USER_PROJECT_DENIED"
+        else:
+            reason_code = reason_code or f"HTTP_{status_code}"
 
     if reason_code in _REASON_REMEDIATION:
         branch, remediation = _REASON_REMEDIATION[reason_code]
@@ -333,6 +371,7 @@ def execute_datastore_query(
     page_size: int = 5,
     filter_expr: str | None = None,
     allow_adc_fallback: bool | None = None,
+    enable_reranker: bool = False,
     _is_retry: bool = False
 ) -> str:
     """Core execution engine for querying a Discovery Engine datastore with multi-category auth resolution."""
@@ -464,7 +503,8 @@ def execute_datastore_query(
                         wif_audience=wif_audience, wif_project_number=wif_project_number,
                         subject_token_type=subject_token_type, scopes=scopes, authorization_url=authorization_url,
                         token_url=token_url, resource_type=resource_type, page_size=page_size,
-                        filter_expr=filter_expr, allow_adc_fallback=allow_adc_fallback, _is_retry=True
+                        filter_expr=filter_expr, allow_adc_fallback=allow_adc_fallback,
+                        enable_reranker=enable_reranker, _is_retry=True
                     )
                 return "SERVICE_IDENTITY_ERROR: Service Account identity could not be verified by Discovery Engine."
 
@@ -528,6 +568,19 @@ def execute_datastore_query(
                 }))
             return "No matching documents or records found in enterprise repository for your permission level."
 
+        # Optional Local Field-Aware Reranker (AlphaEvolve Gen20)
+        if enable_reranker and results:
+            try:
+                from core.reranker import rerank_results_gen20
+                results = rerank_results_gen20(results, cleaned_query)
+            except Exception as rerank_err:
+                logger.warning(f"Local reranking skipped due to error: {rerank_err}")
+
+        # Parse Discovery Engine Summary if present
+        summary_obj = data.get("summary") or {}
+        summary_text = summary_obj.get("summaryText") or ""
+        summary_prefix = f"=== AI SUMMARY ===\n{summary_text.strip()}\n\n=== EXCERPTS ===\n" if (summarize and summary_text) else ""
+
         # Parse Excerpts with newline cleanup
         formatted_excerpts = []
         for i, res in enumerate(results, 1):
@@ -548,26 +601,29 @@ def execute_datastore_query(
                 except Exception:
                     raw_link = None
 
-            title = str(raw_title)[:150].strip().replace("\n", " ")
+            title = str(raw_title)[:150].strip().replace("\n", " ").replace("\r", " ")
             link_str = ""
-            if raw_link and (str(raw_link).startswith("https://") or str(raw_link).startswith("http://")):
-                link_str = f"\nLink: {str(raw_link)[:250].strip()}"
+            if raw_link:
+                clean_link = str(raw_link).strip().replace("\r", "").replace("\n", "")
+                if clean_link.startswith("https://") or clean_link.startswith("http://") or clean_link.startswith("gs://"):
+                    link_str = f"\nLink: {clean_link[:250].strip()}"
 
             snippet_text = ""
 
-            ext_answers = derived.get("extractive_answers") or []
+            # Check camelCase first (Discovery Engine REST format), then snake_case fallback
+            ext_answers = derived.get("extractiveAnswers") or derived.get("extractive_answers") or []
             if ext_answers and isinstance(ext_answers, list) and isinstance(ext_answers[0], dict):
                 snippet_text = ext_answers[0].get("content") or ""
 
             if not snippet_text:
-                ext_segments = derived.get("extractive_segments") or []
+                ext_segments = derived.get("extractiveSegments") or derived.get("extractive_segments") or []
                 if ext_segments and isinstance(ext_segments, list) and isinstance(ext_segments[0], dict):
                     snippet_text = ext_segments[0].get("content") or ""
 
             if not snippet_text:
                 snippets = derived.get("snippets") or []
                 if snippets and isinstance(snippets, list) and isinstance(snippets[0], dict):
-                    snippet_text = snippets[0].get("snippet") or ""
+                    snippet_text = snippets[0].get("snippet") or snippets[0].get("htmlSnippet") or ""
 
             if not snippet_text and struct:
                 snippet_text = _serialize_struct(struct, display_columns)
@@ -575,7 +631,7 @@ def execute_datastore_query(
             if not snippet_text:
                 snippet_text = struct.get("description") or "No preview available."
 
-            clean_snippet = str(snippet_text).strip().replace("\n", " ")
+            clean_snippet = str(snippet_text).strip().replace("\n", " ").replace("\r", " ")
             truncated_snippet = clean_snippet[:1000].strip() + ("..." if len(clean_snippet) > 1000 else "")
 
             formatted_excerpts.append(f"[{i}] Title: {title}{link_str}\nExcerpt: {truncated_snippet}\n")
@@ -590,7 +646,8 @@ def execute_datastore_query(
             "auth_mode": target_auth_mode.value,
             "latency_ms": latency_ms
         }))
-        return "\n".join(formatted_excerpts) if formatted_excerpts else "No matching readable content found."
+        body_text = "\n".join(formatted_excerpts) if formatted_excerpts else "No matching readable content found."
+        return summary_prefix + body_text
 
     except requests.exceptions.Timeout:
         logger.error(f"Discovery Engine query timed out for {target_engine_id}")
@@ -640,6 +697,7 @@ class DatastoreSearchTool:
             resource_type=self.binding.resource_type,
             page_size=self.binding.page_size,
             filter_expr=self.binding.filter,
+            enable_reranker=self.binding.enable_reranker,
         )
 
 def create_enterprise_datastore_tool(
@@ -666,6 +724,7 @@ def create_enterprise_datastore_tool(
     filter_expr: str | None = None,
     project_id: str | None = None,
     allow_adc_fallback: bool | None = None,
+    enable_reranker: bool = False,
 ) -> DatastoreSearchTool:
     """Tool Factory: Creates an independent, thread-safe ADK datastore search tool for multi-connector agents."""
     if isinstance(binding_or_engine_id, DatastoreBinding):
@@ -696,7 +755,8 @@ def create_enterprise_datastore_tool(
             resource_type=resource_type,
             page_size=page_size,
             filter=filter_expr,
-            project_id=project_id
+            project_id=project_id,
+            enable_reranker=enable_reranker
         )
 
     return DatastoreSearchTool(binding)

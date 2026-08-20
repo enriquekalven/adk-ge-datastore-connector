@@ -5,19 +5,65 @@ import os
 import time
 
 
-def evaluate_program(code: str, benchmark_path: str) -> dict:
-    """Three-Tier AlphaEvolve Evaluator following official DeepMind specifications."""
+ALLOWED_MODULES = {"math", "typing", "re", "collections"}
+FORBIDDEN_NAMES = {"eval", "exec", "open", "compile", "__import__", "globals", "locals", "getattr", "setattr", "delattr", "breakpoint"}
+FORBIDDEN_ATTRS = {"__subclasses__", "__globals__", "__code__", "__class__", "__bases__", "__mro__", "__builtins__"}
+
+
+def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root_mod = name.split(".")[0]
+    if root_mod not in ALLOWED_MODULES:
+        raise ImportError(f"Import of '{name}' is strictly forbidden by security policy")
+    return __import__(name, globals, locals, fromlist, level)
+
+
+SAFE_BUILTINS = {
+    "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
+    "enumerate": enumerate, "filter": filter, "float": float, "int": int,
+    "isinstance": isinstance, "issubclass": issubclass, "iter": iter,
+    "len": len, "list": list, "map": map, "max": max, "min": min,
+    "next": next, "range": range, "round": round, "set": set,
+    "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
+    "zip": zip, "True": True, "False": False, "None": None,
+    "__import__": _safe_import
+}
+
+
+def validate_code_security(code: str) -> str | None:
+    """Strict AST validator ensuring candidate programs cannot execute unsafe operations."""
     try:
         tree = ast.parse(code)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name in ("sys", "os", "subprocess", "inspect"):
-                        return {"score": None, "insights": [{"label": "validation", "text": f"Forbidden module: {alias.name}"}]}
-    except SyntaxError as syntax_err:
-        return {"score": None, "insights": [{"label": "validation", "text": f"Syntax error: {syntax_err}"}]}
+    except SyntaxError as e:
+        return f"Syntax error: {e}"
 
-    namespace = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                mod = alias.name.split(".")[0]
+                if mod not in ALLOWED_MODULES:
+                    return f"Forbidden module import: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                mod = node.module.split(".")[0]
+                if mod not in ALLOWED_MODULES:
+                    return f"Forbidden module import from: {node.module}"
+        elif isinstance(node, ast.Name):
+            if node.id in FORBIDDEN_NAMES:
+                return f"Forbidden identifier: {node.id}"
+        elif isinstance(node, ast.Attribute):
+            if node.attr in FORBIDDEN_ATTRS:
+                return f"Forbidden attribute access: {node.attr}"
+
+    return None
+
+
+def evaluate_program(code: str, benchmark_path: str) -> dict:
+    """Three-Tier AlphaEvolve Evaluator with strict AST security enforcement."""
+    sec_err = validate_code_security(code)
+    if sec_err:
+        return {"score": None, "insights": [{"label": "validation", "text": f"Security check failed: {sec_err}"}]}
+
+    namespace = {"__builtins__": SAFE_BUILTINS}
     try:
         exec(compile(code, "initial_program.py", "exec"), namespace)
     except Exception as exec_err:

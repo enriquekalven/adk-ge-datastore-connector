@@ -20,7 +20,8 @@ _cached_adc_token: str | None = None
 _cached_adc_expiry: float = 0.0
 _adc_lock = threading.Lock()
 
-# Thread-safe STS Token Cache for Federated Tokens
+# Thread-safe STS Token Cache for Federated Tokens with capacity limit & TTL eviction
+_MAX_STS_CACHE_ENTRIES = 1000
 _cached_sts_tokens: dict[str, tuple[str, float]] = {}
 _sts_lock = threading.Lock()
 
@@ -69,44 +70,67 @@ def get_adc_token() -> str | None:
                     expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
                 _cached_adc_expiry = expiry_dt.timestamp() - 60
             else:
-                _cached_adc_expiry = now + 3500
+                _cached_adc_expiry = now + 3000
 
             return _cached_adc_token
         except Exception as e:
             logger.error("Failed to refresh Google ADC token: %s", e)
             return None
 
-def exchange_federated_token_sts(external_idp_token: str, project_number: str = "123456789012") -> str | None:
+def exchange_federated_token_sts(
+    external_idp_token: str,
+    project_number: str | None = None,
+    audience: str | None = None,
+    subject_token_type: str = "urn:ietf:params:oauth:token-type:jwt"
+) -> str | None:
     """Exchanges an external IdP OAuth access token for a short-lived Google STS token via WIF."""
     global _cached_sts_tokens
+    import hashlib
+    import json
+    token_hash = hashlib.sha256(external_idp_token.encode("utf-8")).hexdigest()
+    target_audience = audience or (
+        f"//iam.googleapis.com/projects/{project_number}/locations/global/workforcePools/enterprise-pool/providers/default-provider"
+        if project_number else "//iam.googleapis.com/locations/global/workforcePools/enterprise-pool/providers/default-provider"
+    )
+    cache_key = f"{target_audience}:{token_hash}"
     now = time.time()
 
     with _sts_lock:
-        if external_idp_token in _cached_sts_tokens:
-            token, exp = _cached_sts_tokens[external_idp_token]
+        if cache_key in _cached_sts_tokens:
+            token, exp = _cached_sts_tokens[cache_key]
             if now < exp:
                 return token
+            del _cached_sts_tokens[cache_key]
 
     sts_url = "https://sts.googleapis.com/v1/token"
     payload = {
         "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "audience": f"//iam.googleapis.com/projects/{project_number}/locations/global/workforcePools/enterprise-pool/providers/default-provider",
+        "audience": target_audience,
         "scope": "https://www.googleapis.com/auth/cloud-platform",
         "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
         "subject_token": external_idp_token,
-        "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "subject_token_type": subject_token_type,
     }
+    if project_number:
+        payload["options"] = json.dumps({"userProject": project_number})
 
     session = get_http_session()
     try:
-        resp = session.post(sts_url, data=payload, timeout=5)
+        resp = session.post(sts_url, data=payload, timeout=(3.05, 10.0))
         if resp.status_code == 200:
             data = resp.json()
             exchanged_token = data.get("access_token")
             expires_in = data.get("expires_in", 3600)
             if exchanged_token:
                 with _sts_lock:
-                    _cached_sts_tokens[external_idp_token] = (exchanged_token, now + expires_in - 60)
+                    if len(_cached_sts_tokens) >= _MAX_STS_CACHE_ENTRIES:
+                        expired_keys = [k for k, (_, exp) in _cached_sts_tokens.items() if exp <= now]
+                        for k in expired_keys:
+                            del _cached_sts_tokens[k]
+                        if len(_cached_sts_tokens) >= _MAX_STS_CACHE_ENTRIES:
+                            oldest_key = next(iter(_cached_sts_tokens))
+                            del _cached_sts_tokens[oldest_key]
+                    _cached_sts_tokens[cache_key] = (exchanged_token, now + min(expires_in - 60, 3000))
                 return exchanged_token
         logger.warning("Google STS Token Exchange returned non-200 (%s): %s", resp.status_code, resp.text)
     except Exception as e:

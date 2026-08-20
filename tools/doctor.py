@@ -12,12 +12,18 @@ from tools.datastore_search import _classify_error, _get_http_session, _resolve_
 
 logging.basicConfig(level=logging.WARNING)
 
-def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_output: bool = False) -> bool:
+def run_diagnostics(
+    yaml_path: str = "agent.yaml",
+    test_token: str | None = None,
+    json_output: bool = False,
+    project_id: str | None = None,
+    return_report: bool = False
+) -> bool | dict:
     """Runs comprehensive health and diagnostic checks across all datastores."""
     report = {
         "manifest_path": yaml_path,
         "manifest_valid": True,
-        "gcp_project_id": None,
+        "gcp_project_id": project_id,
         "adc_valid": False,
         "runtime_managed": is_managed_runtime(),
         "bindings": [],
@@ -118,9 +124,13 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
             res_type = b.resource_type or ("dataStores" if "dataStore" in b.engine_id else "engines")
             url = f"https://{host}/v1alpha/projects/{target_proj}/locations/{norm_loc}/collections/{b.collection}/{res_type}/{b.engine_id}/servingConfigs/default_search:search"
 
-            probe_token = test_token if (b.auth_mode == AuthMode.USER_OAUTH and test_token) else adc_token
+            probe_token = test_token if test_token else adc_token
+
             if not probe_token:
-                if b.auth_mode == AuthMode.USER_OAUTH:
+                if b.auth_mode == AuthMode.FEDERATED:
+                    binding_report["status"] = "WARN"
+                    binding_report["message"] = "Federated datastore requires test IdP token to issue live search probe. (Pass --token to test end-to-end)"
+                elif b.auth_mode in (AuthMode.USER_OAUTH, AuthMode.THREE_LEGGED_OAUTH):
                     binding_report["status"] = "WARN"
                     binding_report["message"] = "Category A (USER_OAUTH) requires end-user token to issue live search probe. (Pass --token to test end-to-end)"
                 else:
@@ -146,7 +156,18 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
                 binding_report["branch"] = branch
                 binding_report["reason"] = reason
                 binding_report["remediation"] = remediation
-                if b.auth_mode == AuthMode.USER_OAUTH and not test_token:
+                # Critical platform & quota errors MUST fail regardless of auth mode
+                if reason in ("SERVICE_DISABLED", "USER_PROJECT_DENIED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"):
+                    binding_report["status"] = "FAIL"
+                    binding_report["message"] = f"Forbidden: {remediation}"
+                elif reason == "IAM_PERMISSION_DENIED":
+                    if b.auth_mode in (AuthMode.USER_OAUTH, AuthMode.THREE_LEGGED_OAUTH) and not test_token:
+                        binding_report["status"] = "PASS"
+                        binding_report["message"] = "Expected 403 under ADC probe for Category A (End-user token required)."
+                    else:
+                        binding_report["status"] = "FAIL"
+                        binding_report["message"] = f"Forbidden: {remediation}"
+                elif b.auth_mode in (AuthMode.USER_OAUTH, AuthMode.THREE_LEGGED_OAUTH) and not test_token:
                     binding_report["status"] = "PASS"
                     binding_report["message"] = "Expected 403 under ADC probe for Category A (End-user token required)."
                 else:
@@ -197,9 +218,31 @@ def run_diagnostics(yaml_path: str = "agent.yaml", test_token: str = None, json_
             print("  ⚠️  SOME CHECKS REQUIRE ATTENTION (Review remedial steps above)")
         print("=" * 65 + "\n")
 
+    if return_report:
+        return report
     return all_ok
 
-if __name__ == "__main__":
+
+def run_doctor_audit(
+    yaml_path: str = "agent.yaml",
+    test_token: str | None = None,
+    json_output: bool = False,
+    project_id: str | None = None
+) -> dict:
+    """Executes diagnostic health checks and returns structured report dictionary."""
+    return run_diagnostics(
+        yaml_path=yaml_path,
+        test_token=test_token,
+        json_output=json_output,
+        project_id=project_id,
+        return_report=True
+    )
+
+
+doctor_probe = run_diagnostics
+
+
+def main():
     parser = argparse.ArgumentParser(description="Gemini Enterprise & ADK Connector Diagnostic Doctor")
     parser.add_argument("manifest", nargs="?", default="agent.yaml", help="Path to agent.yaml manifest")
     parser.add_argument("--token", help="Test OAuth bearer token for Category A end-to-end probing")
@@ -208,3 +251,10 @@ if __name__ == "__main__":
 
     success = run_diagnostics(args.manifest, test_token=args.token, json_output=args.json)
     sys.exit(0 if success else 1)
+
+
+run_doctor_cli = main
+
+if __name__ == "__main__":
+    main()
+

@@ -60,6 +60,7 @@ class DatastoreBinding(BaseModel):
     scopes: list[str] | None = Field(default=None, description="List of OAuth scopes required for this datastore")
     page_size: int = Field(default=5, ge=1, le=50, description="Max number of search results to retrieve")
     filter: str | None = Field(default=None, description="Discovery Engine filter expression (e.g. branch: main)")
+    enable_reranker: bool = Field(default=False, description="Whether to apply AlphaEvolve Gen20 field-aware local reranking")
 
     @field_validator("auth_mode", mode="before")
     @classmethod
@@ -200,3 +201,6 @@ def load_bindings(yaml_path: str | None = None) -> list[DatastoreBinding]:
         bindings.append(default_binding)
 
     return bindings
+
+load_manifest_from_yaml = load_bindings
+
