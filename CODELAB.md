@@ -267,12 +267,12 @@ If a search query fails in the field, use this quick-reference matrix:
 
 ## 6. Module 4: Packaging & Deploying to Vertex AI Agent Platform (1.5 Minutes)
 
-### Step 6.1: Run Full 39-Test Verification Suite
+### Step 6.1: Run Full 53-Test Verification Suite
 Before deploying, ensure all unit, mock, and integration tests pass:
 ```bash
 pytest -v
 ```
-*(All 39 tests should pass in ~12 seconds).*
+*(All 53 tests should pass in ~4 seconds).*
 
 ### Step 6.2: Deploy via Python SDK (`deploy.py`)
 Create a simple deployment script:

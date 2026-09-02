@@ -256,12 +256,13 @@ def rerank_documents(query: str, raw_results: List[Dict[str, Any]]) -> List[Dict
         mock_session.post.return_value = mock_resp
         mock_get_session.return_value = mock_session
 
-        report = run_doctor_audit(project_id="test-proj", json_output=True, test_token=None)
-        b_res = report["bindings"][0]
+        with patch("tools.doctor.default", return_value=(MagicMock(token="ya29.sa"), "test-proj")):
+            report = run_doctor_audit(project_id="test-proj", json_output=True, test_token=None)
+            b_res = report["bindings"][0]
 
-        self.assertEqual(b_res["status"], "FAIL")
-        self.assertEqual(b_res["reason"], "SERVICE_DISABLED")
-        self.assertIn("disabled", b_res["remediation"].lower())
+            self.assertEqual(b_res["status"], "FAIL")
+            self.assertEqual(b_res["reason"], "SERVICE_DISABLED")
+            self.assertIn("disabled", b_res["remediation"].lower())
 
     @patch("tools.doctor.load_bindings")
     @patch("tools.doctor._get_http_session")

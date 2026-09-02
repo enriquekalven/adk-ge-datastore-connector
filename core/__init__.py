@@ -1,11 +1,10 @@
-"""Google Cloud ADK Gemini Enterprise Datastore Connector - Core Engine.
+"""Google Cloud ADK Gemini Enterprise Datastore Connector - Core Package.
 
 Exports:
-- Authentication & Token Resolution: get_adc_token, extract_user_token, extract_agent_identity_token
-- Core Dispatcher & Reranking: execute_datastore_query, DatastoreSearchTool, create_enterprise_datastore_tool
-- Security & SSRF Allowlist: resolve_host_for_location, sanitize_link, classify_cuj3_error
+- Core Dispatcher & Search Tools: execute_datastore_query, query_enterprise_datastore, DatastoreSearchTool, create_enterprise_datastore_tool
+- Configuration & Manifest Schemas: AuthMode, DatastoreBinding, AgentManifestSchema, is_managed_runtime, load_bindings, load_manifest_from_yaml
 - Diagnostic Preflight: doctor_probe, run_doctor_cli
-- Configuration: AuthMode, DatastoreBinding, AgentManifestSchema, is_managed_runtime
+- AlphaEvolve Gen20 Reranker: rerank_results_gen20
 """
 
 from config import (
@@ -16,6 +15,7 @@ from config import (
     load_bindings,
     load_manifest_from_yaml,
 )
+from core.reranker import rerank_results_gen20
 from tools.datastore_search import (
     DatastoreSearchTool,
     create_enterprise_datastore_tool,
@@ -36,5 +36,6 @@ __all__ = [
     "load_bindings",
     "load_manifest_from_yaml",
     "query_enterprise_datastore",
+    "rerank_results_gen20",
     "run_doctor_cli",
 ]

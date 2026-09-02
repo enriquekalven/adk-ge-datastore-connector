@@ -43,7 +43,11 @@ def search_bigquery(
     """
     target_engine = engine_id or os.environ.get("BIGQUERY_ENGINE_ID", "bigquery-analytics-engine")
     columns = display_columns or ["customer_id", "region", "q3_revenue", "product_line"]
-    deep_link = f"https://console.cloud.google.com/bigquery?project={project_id or 'my-gcp-project'}"
+    deep_link = (
+        f"https://console.cloud.google.com/bigquery?project={project_id}"
+        if project_id
+        else "https://console.cloud.google.com/bigquery?project={project_id}"
+    )
 
     return execute_datastore_query(
         query=query,

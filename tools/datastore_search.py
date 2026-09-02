@@ -343,13 +343,13 @@ def _run_acl_probe(url: str, payload: dict, target_project_id: str) -> int:
         resp = _get_http_session().post(url, json=probe_payload, headers=headers, timeout=(2.0, 4.0))
         if resp.status_code == 200:
             return len(resp.json().get("results", []))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Background ACL probe exception: %s", e)
     return 0
 
 def execute_datastore_query(
     query: str,
-    tool_context: ToolContext,
+    tool_context: ToolContext | None = None,
     engine_id: str | None = None,
     auth_name: str | None = None,
     auth_mode: AuthMode | None = None,
@@ -413,8 +413,8 @@ def execute_datastore_query(
                 cred = tool_context.get_auth_credential(target_auth_name)
                 if cred and hasattr(cred, "token") and cred.token:
                     state_token = cred.token
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("CredentialManager fallback resolution error: %s", e)
 
     access_token, auth_status = resolve_credential(
         target_auth_mode, state_token, target_auth_name, wif_audience, wif_project_number, subject_token_type
@@ -598,7 +598,8 @@ def execute_datastore_query(
                 try:
                     format_dict = {**struct, "project_id": target_project_id, "engine_id": target_engine_id}
                     raw_link = deep_link_template.format(**format_dict)
-                except Exception:
+                except Exception as e:
+                    logger.debug("Deep link template formatting error: %s", e)
                     raw_link = None
 
             title = str(raw_title)[:150].strip().replace("\n", " ").replace("\r", " ")
@@ -662,7 +663,7 @@ def execute_datastore_query(
         return "Search Error: An internal error occurred while querying enterprise knowledge."
 
 @tool
-def query_enterprise_datastore(query: str, tool_context: ToolContext) -> str:
+def query_enterprise_datastore(query: str, tool_context: ToolContext | None = None) -> str:
     """Queries a secure Gemini Enterprise connected datastore using the user's active session OAuth credentials."""
     return execute_datastore_query(query=query, tool_context=tool_context)
 
@@ -673,7 +674,7 @@ class DatastoreSearchTool:
         self.__name__ = binding.tool_name
         self.__doc__ = binding.description
 
-    def __call__(self, query: str, tool_context: ToolContext) -> str:
+    def __call__(self, query: str, tool_context: ToolContext | None = None) -> str:
         return execute_datastore_query(
             query=query,
             tool_context=tool_context,

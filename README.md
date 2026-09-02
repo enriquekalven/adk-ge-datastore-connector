@@ -276,11 +276,7 @@ adk-ge-datastore-connector/
 ├── config.py                      # Pydantic schema validation and DatastoreBinding loader
 ├── core/                          # Shared Enterprise Connector Engine
 │   ├── __init__.py                # Core package exports
-│   ├── client.py                  # Discovery Engine REST dispatcher & connection pooling
-│   ├── auth.py                    # Dual Token Sourcing (3LO/2LO/STS WIF)
-│   ├── security.py                # Fail-closed guard & strict SSRF host allowlist
-│   ├── reranker.py                # AlphaEvolve Gen 20 field-aware reranker
-│   └── doctor.py                  # Axis A / Axis B diagnostic preflight engine
+│   └── reranker.py                # AlphaEvolve Gen 20 field-aware reranker
 ├── skills/                        # Top 7 Pre-Built Drop-In Enterprise Skills
 │   ├── __init__.py                # Top-level skill exports
 │   ├── sharepoint/                # [Category A] Microsoft SharePoint Online (3LO)
@@ -292,8 +288,8 @@ adk-ge-datastore-connector/
 │   └── bigquery/                  # [Category C] BigQuery Structured Analytics (2LO)
 ├── tools/
 │   ├── __init__.py                # Tools package initialization
-│   ├── datastore_search.py        # Backward-compatible search tool facade
-│   ├── doctor.py                  # Diagnostic connectivity CLI runner
+│   ├── datastore_search.py        # Core search tool & OAuth token propagation engine
+│   ├── doctor.py                  # Axis A / Axis B diagnostic preflight CLI runner
 │   └── scaffold.py                # CLI Generator for 80+ additional connectors
 ├── tests/
 │   ├── __init__.py                # Tests package initialization
@@ -468,7 +464,7 @@ agents-cli deploy \
 pip install -r requirements.txt
 ```
 
-### 2. Run Comprehensive Test Suite (32 Tests)
+### 2. Run Comprehensive Test Suite (53 Tests)
 
 Execute the full suite of unit, grant model, and offline mock tests:
 
