@@ -6,12 +6,12 @@ description: "Universal ADK Agent integrating OAuth/ACL token propagation for se
 version: "1.0.0"
 entrypoint: "agent:root_agent"
 
-# Environment Variables Configuration
+# Environment Variables Configuration (Dynamic fallback to host environment)
 env:
-  PROJECT_ID: "your-gcp-project-id"
-  LOCATION: "global"
-  COLLECTION: "default_collection"
-  MODEL_NAME: "gemini-2.0-flash"
+  PROJECT_ID: "${PROJECT_ID:-${GOOGLE_CLOUD_PROJECT:-your-gcp-project-id}}"
+  LOCATION: "${LOCATION:-global}"
+  COLLECTION: "${COLLECTION:-default_collection}"
+  MODEL_NAME: "${MODEL_NAME:-gemini-2.0-flash}"
 
 # Multi-Datastore Declarative Bindings (CUJ 1 Graduation Flow)
 datastores:
@@ -63,4 +63,4 @@ authorizationConfig:
     - targetKey: "sharepoint_oauth"
       sourceClaim: "access_token"
 
-  resource: "projects/123456789012/locations/global/authorizations/sharepoint-oauth-config"
+  resource: "projects/${PROJECT_NUMBER:-123456789012}/locations/${LOCATION:-global}/authorizations/sharepoint-oauth-config"

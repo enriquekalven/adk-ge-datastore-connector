@@ -5,6 +5,7 @@ Demonstrates the Veer Muchandi OAuth/ACL Token Propagation Pattern for ADK 2.x A
 """
 
 import logging
+import os
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -28,6 +29,9 @@ def run_codelab_demo(live_mode: bool = False):
     print("=" * 80)
     print("Demonstrating 3-Legged OAuth (3LO) User ACL Propagation & Fail-Closed Boundaries\n")
 
+    target_project = os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT", "my-gcp-project"))
+    target_location = os.getenv("LOCATION", "global")
+
     if not live_mode:
         # Mock Discovery Engine responses for deterministic local demonstration
         with patch("tools.datastore_search._get_http_session") as mock_session_fn:
@@ -46,7 +50,7 @@ def run_codelab_demo(live_mode: bool = False):
             resp_alice.json.return_value = {
                 "results": [{
                     "document": {
-                        "name": "projects/123/locations/global/collections/default_collection/dataStores/sharepoint/documents/doc-1",
+                        "name": f"projects/{target_project}/locations/{target_location}/collections/default_collection/dataStores/sharepoint/documents/doc-1",
                         "derivedStructData": {
                             "title": "2026 Executive Payroll & Bonus Structure.docx",
                             "link": "https://company.sharepoint.com/sites/hr/payroll-2026.docx",
@@ -60,11 +64,11 @@ def run_codelab_demo(live_mode: bool = False):
             res_alice = execute_datastore_query(
                 query="2026 Executive Payroll and Compensation Strategy",
                 tool_context=alice_ctx,
-                engine_id="sharepoint-engine",
+                engine_id=os.getenv("SHAREPOINT_ENGINE_ID", "sharepoint-engine"),
                 auth_name="sharepoint_oauth",
                 auth_mode=AuthMode.USER_OAUTH,
-                project_id="my-gcp-project",
-                location="global"
+                project_id=target_project,
+                location=target_location
             )
             print("   [Result from Discovery Engine Connector]:")
             print(f"   {res_alice.strip()}\n")
@@ -79,11 +83,11 @@ def run_codelab_demo(live_mode: bool = False):
             res_anon = execute_datastore_query(
                 query="Confidential HR Compensation Strategy",
                 tool_context=anon_ctx,
-                engine_id="sharepoint-engine",
+                engine_id=os.getenv("SHAREPOINT_ENGINE_ID", "sharepoint-engine"),
                 auth_name="sharepoint_oauth",
                 auth_mode=AuthMode.USER_OAUTH,
-                project_id="my-gcp-project",
-                location="global"
+                project_id=target_project,
+                location=target_location
             )
             print("   [Security Boundary Enforcement Output]:")
             print(f"   {res_anon}\n")
@@ -101,7 +105,7 @@ def run_codelab_demo(live_mode: bool = False):
             resp_bq.json.return_value = {
                 "results": [{
                     "document": {
-                        "name": "projects/123/locations/global/collections/default_collection/dataStores/bq/documents/row-101",
+                        "name": f"projects/{target_project}/locations/{target_location}/collections/default_collection/dataStores/bq/documents/row-101",
                         "structData": {
                             "customer_id": "CUST-9921",
                             "region": "North America - West",
@@ -118,19 +122,48 @@ def run_codelab_demo(live_mode: bool = False):
                 res_bq = execute_datastore_query(
                     query="Q3 Revenue by Customer Region",
                     tool_context=bq_ctx,
-                    engine_id="bigquery-analytics-engine",
+                    engine_id=os.getenv("BIGQUERY_ENGINE_ID", "bigquery-analytics-engine"),
                     auth_mode=AuthMode.SERVICE_ACCOUNT,
                     category="C",
                     display_columns=["customer_id", "region", "q3_revenue"],
                     deep_link_template="https://console.cloud.google.com/bigquery?project={project_id}",
-                    project_id="my-gcp-project",
-                    location="global"
+                    project_id=target_project,
+                    location=target_location
                 )
             print("   [Result from Structured BigQuery Datastore]:")
             print(f"   {res_bq.strip()}\n")
+    else:
+        # Live Mode: Executes real HTTP queries against Discovery Engine
+        print(f"📡 Running in LIVE mode against GCP Project: '{target_project}' (Location: {target_location})")
+        print("👉 [Step 1] Executing Query with Missing Token (Fail-Closed Boundary)...")
+        anon_ctx = MockSessionContext(token=None, email=os.getenv("USER_EMAIL", "anonymous@example.com"))
+        res_anon = execute_datastore_query(
+            query="Enterprise policy and operations",
+            tool_context=anon_ctx,
+            engine_id=os.getenv("ENGINE_ID", "sharepoint-engine"),
+            auth_name=os.getenv("AUTH_NAME", "sharepoint_oauth"),
+            auth_mode=AuthMode.USER_OAUTH,
+            project_id=target_project,
+            location=target_location
+        )
+        print(f"   [Security Boundary Enforcement Output]:\n   {res_anon}\n")
+
+        print("👉 [Step 2] Executing Service Account Search (Category B/C)...")
+        sa_ctx = MockSessionContext(token=None, email=os.getenv("USER_EMAIL", "service-account@example.com"))
+        res_sa = execute_datastore_query(
+            query="Enterprise revenue and operations",
+            tool_context=sa_ctx,
+            engine_id=os.getenv("BIGQUERY_ENGINE_ID", "bigquery-analytics-engine"),
+            auth_mode=AuthMode.SERVICE_ACCOUNT,
+            category="C",
+            project_id=target_project,
+            location=target_location,
+            allow_adc_fallback=True
+        )
+        print(f"   [Result from Live Datastore]:\n   {res_sa.strip()}\n")
 
     print("=" * 80)
-    print("🎉 CODELAB DEMO COMPLETED SUCCESSFULLY in < 1 second!")
+    print("🎉 CODELAB DEMO COMPLETED SUCCESSFULLY!")
     print("=" * 80)
 
 if __name__ == "__main__":

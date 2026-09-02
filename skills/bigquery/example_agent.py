@@ -1,4 +1,4 @@
-"""Standalone Example: BigQuery Analytics & Data Warehouse Agent."""
+import os
 
 from skills.bigquery.tool import search_bigquery
 
@@ -15,7 +15,7 @@ except ImportError:
 # Instantiate the BigQuery Analytics Agent
 bigquery_agent = Agent(
     name="bigquery_analytics_assistant",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are an enterprise data analytics assistant. "
         "Search structured customer, revenue, and regional metrics using search_bigquery."

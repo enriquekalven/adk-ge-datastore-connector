@@ -98,7 +98,7 @@ def search_{name_clean}(
         auth_mode=AuthMode.{auth_mode},
         category="{category}",
         project_id=project_id,
-        location=location or "global",
+        location=location,
         allow_adc_fallback={allow_adc}
     )
 '''
@@ -121,7 +121,7 @@ except ImportError:
 # Instantiate the {title_name} Agent
 agent = Agent(
     name="{name_clean}_assistant",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are an enterprise knowledge assistant specializing in {title_name}. "
         "Always ground your responses in records retrieved via search_{name_clean}."

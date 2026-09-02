@@ -64,20 +64,16 @@ def run_diagnostics(
     # 2. Check GCP Project & ADC Authentication
     if not json_output:
         print("\n[2/4] Checking GCP Identity & Credentials...")
-    project_id = os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT"))
-    if not project_id and bindings and bindings[0].project_id:
-        project_id = bindings[0].project_id
 
-    report["gcp_project_id"] = project_id
-    if not project_id:
-        if not json_output:
-            print("  ❌ [FAIL] Missing GCP PROJECT_ID. Set PROJECT_ID in agent.yaml or environment.")
-        report["overall_status"] = "FAIL"
-    else:
-        if not json_output:
-            print(f"  ✅ GCP Project ID: {project_id}")
+    PLACEHOLDER_PROJECTS = {"your-gcp-project-id", "my-gcp-project", "default-project", "<your-project-id>"}
+
+    project_id = os.getenv("PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    if (not project_id or project_id in PLACEHOLDER_PROJECTS) and bindings and bindings[0].project_id:
+        if bindings[0].project_id not in PLACEHOLDER_PROJECTS:
+            project_id = bindings[0].project_id
 
     adc_token = None
+    auth_project = None
     try:
         creds, auth_project = default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
         auth_req = auth_requests.Request()
@@ -89,6 +85,26 @@ def run_diagnostics(
     except Exception as e:
         if not json_output:
             print(f"  ⚠️  ADC Credential check warning: {e}")
+
+    auto_detected = False
+    if (not project_id or project_id in PLACEHOLDER_PROJECTS) and auth_project and auth_project not in PLACEHOLDER_PROJECTS:
+        project_id = auth_project
+        auto_detected = True
+
+    report["gcp_project_id"] = project_id
+    if not project_id or project_id in PLACEHOLDER_PROJECTS:
+        if not json_output:
+            if project_id in PLACEHOLDER_PROJECTS:
+                print(f"  ❌ [FAIL] GCP PROJECT_ID is set to placeholder '{project_id}'. Set your real GCP Project ID in agent.yaml or environment.")
+            else:
+                print("  ❌ [FAIL] Missing GCP PROJECT_ID. Set PROJECT_ID in agent.yaml or environment.")
+        report["overall_status"] = "FAIL"
+    else:
+        if not json_output:
+            if auto_detected:
+                print(f"  ✅ Auto-detected active GCP Project ID from ADC: {project_id}")
+            else:
+                print(f"  ✅ GCP Project ID: {project_id}")
 
     # 3. Check Managed Runtime Context
     if not json_output:

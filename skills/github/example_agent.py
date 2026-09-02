@@ -1,4 +1,4 @@
-"""Standalone Example: GitHub Codebase & Repo Search Agent."""
+import os
 
 from skills.github.tool import search_github
 
@@ -15,7 +15,7 @@ except ImportError:
 # Instantiate the GitHub Codebase Agent
 github_agent = Agent(
     name="github_code_navigator",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are an enterprise software engineering navigator. "
         "Find repositories, code architectures, and pull requests using search_github."

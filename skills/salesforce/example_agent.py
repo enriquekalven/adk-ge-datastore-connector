@@ -1,4 +1,4 @@
-"""Standalone Example: Salesforce Revenue & Pipeline Agent."""
+import os
 
 from skills.salesforce.tool import search_salesforce
 
@@ -15,7 +15,7 @@ except ImportError:
 # Instantiate the Salesforce Revenue Operations Agent
 salesforce_agent = Agent(
     name="salesforce_revops_assistant",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are a Revenue Operations and CRM assistant. "
         "Find account records, customer opportunities, and pipeline data using search_salesforce."

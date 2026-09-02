@@ -1,4 +1,4 @@
-"""Standalone Example: Jira Issue Tracking & Engineering Agent."""
+import os
 
 from skills.jira.tool import search_jira
 
@@ -15,7 +15,7 @@ except ImportError:
 # Instantiate the Jira Engineering Agent
 jira_agent = Agent(
     name="jira_engineering_assistant",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are an engineering sprint assistant. "
         "Search Jira issues, bugs, and backlog tickets using search_jira to answer developer questions."

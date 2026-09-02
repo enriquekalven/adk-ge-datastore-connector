@@ -1,4 +1,4 @@
-"""Standalone Example: Slack Community & Discussion Agent."""
+import os
 
 from skills.slack.tool import search_slack
 
@@ -15,7 +15,7 @@ except ImportError:
 # Instantiate the Slack Community Agent
 slack_agent = Agent(
     name="slack_knowledge_assistant",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are an internal team collaboration assistant. "
         "Find team discussions, announcements, and past channel messages using search_slack."

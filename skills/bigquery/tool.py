@@ -23,7 +23,8 @@ def search_bigquery(
     engine_id: str | None = None,
     project_id: str | None = None,
     location: str | None = None,
-    display_columns: list[str] | None = None
+    display_columns: list[str] | None = None,
+    deep_link_template: str | None = None
 ) -> str:
     """Searches BigQuery structured analytics tables and enterprise data lake records.
     
@@ -37,16 +38,27 @@ def search_bigquery(
         project_id: Optional override for GCP Project ID.
         location: Optional override for datastore location ('global', 'us', 'eu').
         display_columns: Optional list of column names to display (e.g. ['customer_id', 'revenue']).
+        deep_link_template: Optional custom deep link template URL.
         
     Returns:
         Structured search results with record keys, deep links, and formatted column key-values.
     """
     target_engine = engine_id or os.environ.get("BIGQUERY_ENGINE_ID", "bigquery-analytics-engine")
-    columns = display_columns or ["customer_id", "region", "q3_revenue", "product_line"]
+    env_cols = os.environ.get("BIGQUERY_DISPLAY_COLUMNS")
+    default_cols = (
+        [c.strip() for c in env_cols.split(",") if c.strip()]
+        if env_cols
+        else ["customer_id", "region", "q3_revenue", "product_line"]
+    )
+    columns = display_columns or default_cols
     deep_link = (
-        f"https://console.cloud.google.com/bigquery?project={project_id}"
-        if project_id
-        else "https://console.cloud.google.com/bigquery?project={project_id}"
+        deep_link_template
+        or os.environ.get("BIGQUERY_DEEP_LINK_TEMPLATE")
+        or (
+            f"https://console.cloud.google.com/bigquery?project={project_id}"
+            if project_id
+            else "https://console.cloud.google.com/bigquery?project={project_id}"
+        )
     )
 
     return execute_datastore_query(
@@ -57,7 +69,7 @@ def search_bigquery(
         auth_mode=AuthMode.SERVICE_ACCOUNT,
         category="C",
         project_id=project_id,
-        location=location or "global",
+        location=location,
         display_columns=columns,
         deep_link_template=deep_link,
         allow_adc_fallback=True

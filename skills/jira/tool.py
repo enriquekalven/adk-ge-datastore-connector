@@ -51,6 +51,6 @@ def search_jira(
         auth_mode=AuthMode.USER_OAUTH,
         category="A",
         project_id=project_id,
-        location=location or "global",
+        location=location,
         scopes=["read:jira-work", "read:jira-user"]
     )

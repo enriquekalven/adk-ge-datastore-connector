@@ -47,6 +47,6 @@ def search_slack(
         auth_mode=AuthMode.SERVICE_ACCOUNT,
         category="B",
         project_id=project_id,
-        location=location or "global",
+        location=location,
         allow_adc_fallback=True
     )

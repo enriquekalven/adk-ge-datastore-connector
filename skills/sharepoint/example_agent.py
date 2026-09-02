@@ -1,4 +1,4 @@
-"""Standalone Example: SharePoint Enterprise Concierge Agent."""
+import os
 
 from skills.sharepoint.tool import search_sharepoint
 
@@ -15,7 +15,7 @@ except ImportError:
 # Instantiate the SharePoint Knowledge Agent
 sharepoint_agent = Agent(
     name="sharepoint_concierge",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are an enterprise HR and Corporate Knowledge assistant. "
         "Always ground your responses in internal SharePoint documents retrieved via search_sharepoint."

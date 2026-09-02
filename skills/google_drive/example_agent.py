@@ -1,4 +1,4 @@
-"""Standalone Example: Google Drive Enterprise Search Agent."""
+import os
 
 from skills.google_drive.tool import search_google_drive
 
@@ -15,7 +15,7 @@ except ImportError:
 # Instantiate the Google Drive Search Agent
 drive_agent = Agent(
     name="google_drive_researcher",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
     instruction=(
         "You are a corporate document research agent. "
         "Find Google Docs, Sheets, and Slides in Google Drive using search_google_drive."

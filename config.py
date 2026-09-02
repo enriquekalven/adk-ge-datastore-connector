@@ -132,6 +132,22 @@ def is_managed_runtime() -> bool:
     """Returns True if running in a managed cloud runtime (Agent Engine, Cloud Run, GAE)."""
     return any(bool(os.getenv(v)) for v in _MANAGED_ENV_VARS)
 
+def _expand_env_vars(content: str) -> str:
+    """Expands ${VAR} and ${VAR:-default} patterns using environment variables, supporting nested expressions."""
+    pattern = re.compile(r"\$\{([^{}]+)\}")
+    for _ in range(5):
+        if not pattern.search(content):
+            break
+        def _replace(match):
+            expr = match.group(1)
+            if ":-" in expr:
+                var, default_val = expr.split(":-", 1)
+                val = os.getenv(var)
+                return val if val else default_val
+            return os.getenv(expr, "")
+        content = pattern.sub(_replace, content)
+    return content
+
 def load_bindings(yaml_path: str | None = None) -> list[DatastoreBinding]:
     """Loads and validates datastore bindings from agent.yaml manifest with strict Pydantic validation."""
     if yaml_path is None:
@@ -142,7 +158,9 @@ def load_bindings(yaml_path: str | None = None) -> list[DatastoreBinding]:
 
     if os.path.exists(yaml_path):
         with open(yaml_path, encoding="utf-8") as f:
-            raw_data = yaml.safe_load(f) or {}
+            raw_text = f.read()
+        expanded_text = _expand_env_vars(raw_text)
+        raw_data = yaml.safe_load(expanded_text) or {}
 
         if raw_data and "datastores" not in raw_data and not raw_data.get("datastores"):
             raise ValueError(f"Manifest '{yaml_path}' defines no 'datastores:' configuration list. Refusing silent fallback.")
@@ -154,6 +172,11 @@ def load_bindings(yaml_path: str | None = None) -> list[DatastoreBinding]:
             # Export env block to os.environ so MODEL_NAME, etc. are accessible
             for k, v in global_env.items():
                 if k not in os.environ and v is not None:
+                    # Do not let placeholder PROJECT_ID overwrite real GOOGLE_CLOUD_PROJECT
+                    if k == "PROJECT_ID" and str(v).lower() in ("your-gcp-project-id", "my-gcp-project", "default-project"):
+                        if "GOOGLE_CLOUD_PROJECT" in os.environ:
+                            os.environ[k] = os.environ["GOOGLE_CLOUD_PROJECT"]
+                            continue
                     os.environ[k] = str(v)
 
             if manifest.datastores:
@@ -165,7 +188,10 @@ def load_bindings(yaml_path: str | None = None) -> list[DatastoreBinding]:
                     if "collection" not in fields_set and "COLLECTION" in global_env:
                         updates["collection"] = os.getenv("COLLECTION", global_env["COLLECTION"])
                     if "project_id" not in fields_set:
-                        updates["project_id"] = os.getenv("PROJECT_ID", global_env.get("PROJECT_ID"))
+                        proj_val = os.getenv("PROJECT_ID", global_env.get("PROJECT_ID"))
+                        if proj_val in ("your-gcp-project-id", "my-gcp-project", "default-project") and os.getenv("GOOGLE_CLOUD_PROJECT"):
+                            proj_val = os.getenv("GOOGLE_CLOUD_PROJECT")
+                        updates["project_id"] = proj_val
 
                     updated = b.model_copy(update=updates) if updates else b
                     bindings.append(updated)

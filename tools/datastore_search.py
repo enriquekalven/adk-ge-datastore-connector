@@ -99,6 +99,25 @@ def _get_adc_token() -> str | None:
         _cached_adc_expiry = min(expiry_timestamp, now + 3000)
         return _cached_adc_token
 
+_cached_adc_project: str | None = None
+_adc_project_checked: bool = False
+
+def _get_adc_project() -> str | None:
+    """Extracts project ID associated with Application Default Credentials if available (cached)."""
+    global _cached_adc_project, _adc_project_checked
+    if _adc_project_checked:
+        return _cached_adc_project
+    with _adc_lock:
+        if _adc_project_checked:
+            return _cached_adc_project
+        try:
+            _, auth_project = default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            _cached_adc_project = auth_project
+        except Exception:
+            _cached_adc_project = None
+        _adc_project_checked = True
+        return _cached_adc_project
+
 def _invalidate_adc_token():
     """Invalidates cached ADC token on 401 Unauthorized errors."""
     global _cached_adc_token, _cached_adc_expiry
@@ -384,7 +403,17 @@ def execute_datastore_query(
 
     target_auth_name = auth_name or os.getenv("AUTH_NAME", "enterprise_oauth")
     target_engine_id = engine_id or os.getenv("ENGINE_ID", "enterprise-datastore-engine")
-    target_project_id = project_id or os.getenv("PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT", "default-project"))
+    target_project_id = (
+        project_id
+        or os.getenv("PROJECT_ID")
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+    )
+    if not target_project_id or target_project_id in ("your-gcp-project-id", "my-gcp-project", "default-project"):
+        adc_proj = _get_adc_project()
+        if adc_proj and adc_proj not in ("your-gcp-project-id", "my-gcp-project", "default-project"):
+            target_project_id = adc_proj
+        elif not target_project_id:
+            target_project_id = "default-project"
 
     raw_location = location or os.getenv("LOCATION", "global")
     target_collection = collection or os.getenv("COLLECTION", "default_collection")
