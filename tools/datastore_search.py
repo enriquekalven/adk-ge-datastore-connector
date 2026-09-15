@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -391,6 +392,7 @@ def execute_datastore_query(
     filter_expr: str | None = None,
     allow_adc_fallback: bool | None = None,
     enable_reranker: bool = False,
+    format: Literal["markdown", "json"] = "markdown",
     _is_retry: bool = False
 ) -> str:
     """Core execution engine for querying a Discovery Engine datastore with multi-category auth resolution."""
@@ -400,6 +402,7 @@ def execute_datastore_query(
         return "Search Error: Please provide a valid, non-empty search query."
 
     cleaned_query = query.strip()[:500]
+    query_sha256 = hashlib.sha256(cleaned_query.encode("utf-8")).hexdigest()[:16]
 
     target_auth_name = auth_name or os.getenv("AUTH_NAME", "enterprise_oauth")
     target_engine_id = engine_id or os.getenv("ENGINE_ID", "enterprise-datastore-engine")
@@ -445,6 +448,18 @@ def execute_datastore_query(
             except Exception as e:
                 logger.debug("CredentialManager fallback resolution error: %s", e)
 
+    # Local Developer 3LO Testing (Option 1):
+    # Only if NOT running in a managed production runtime, check local env test tokens
+    if not state_token and not is_managed_runtime():
+        local_test_token = (
+            os.getenv(f"{target_auth_name.upper()}_TOKEN")
+            or os.getenv("TEST_OAUTH_TOKEN")
+            or os.getenv("TEST_AUTH_TOKEN")
+        )
+        if local_test_token:
+            state_token = local_test_token
+            logger.info(f"💻 [Local Dev Mode] Using local test token for '{target_auth_name}' from environment.")
+
     access_token, auth_status = resolve_credential(
         target_auth_mode, state_token, target_auth_name, wif_audience, wif_project_number, subject_token_type
     )
@@ -475,14 +490,25 @@ def execute_datastore_query(
         logger.error(f"Location resolution failed: {val_err}")
         return f"Configuration Error: {val_err}"
 
+    # Discovery Engine API versioning (Option A: GA v1 by default, configurable with v1alpha opt-in)
+    api_version = os.getenv("DISCOVERY_ENGINE_API_VERSION", "v1").lower().strip()
+    if api_version not in ("v1", "v1alpha", "v1beta"):
+        api_version = "v1"
+
     res_type = resource_type or ("dataStores" if "dataStore" in target_engine_id else "engines")
-    url = f"https://{host}/v1alpha/projects/{target_project_id}/locations/{norm_location}/collections/{target_collection}/{res_type}/{target_engine_id}/servingConfigs/default_search:search"
+    url = f"https://{host}/{api_version}/projects/{target_project_id}/locations/{norm_location}/collections/{target_collection}/{res_type}/{target_engine_id}/servingConfigs/default_search:search"
+
+    # Correlate Cloud Trace if running under Cloud Run / Agent Runtime
+    trace_context = os.getenv("TRACE_ID") or os.getenv("CLOUD_TRACE_CONTEXT", "")
+    trace_id = trace_context.split("/")[0] if trace_context else None
 
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
         "X-Goog-User-Project": target_project_id
     }
+    if trace_context:
+        headers["X-Cloud-Trace-Context"] = trace_context
 
     payload = {
         "query": cleaned_query,
@@ -666,16 +692,42 @@ def execute_datastore_query(
 
             formatted_excerpts.append(f"[{i}] Title: {title}{link_str}\nExcerpt: {truncated_snippet}\n")
 
-        logger.info(json.dumps({
+        # Zero-PII Audit Logging: never log raw query string or snippet text
+        audit_payload = {
             "jsonPayload_marker": "ge_connector",
             "user_id": str(user_id) if user_id is not None else "anonymous",
             "session_id": str(session_id) if session_id is not None else "default_session",
             "engine_id": target_engine_id,
             "status": 200,
-            "result_count": len(formatted_excerpts),
+            "result_count": len(results),
             "auth_mode": target_auth_mode.value,
-            "latency_ms": latency_ms
-        }))
+            "api_version": api_version,
+            "latency_ms": latency_ms,
+            "query_sha256": query_sha256
+        }
+        if trace_id:
+            audit_payload["logging.googleapis.com/trace"] = trace_id
+        logger.info(json.dumps(audit_payload))
+
+        if format == "json":
+            json_results = []
+            for i, res in enumerate(results, 1):
+                doc = res.get("document") or {}
+                derived = doc.get("derivedStructData") or {}
+                struct = doc.get("structData") or {}
+                json_results.append({
+                    "index": i,
+                    "title": derived.get("title") or struct.get("title") or doc.get("name") or f"Record #{i}",
+                    "link": derived.get("link") or struct.get("link") or struct.get("url") or struct.get("html_url"),
+                    "structData": struct,
+                    "derivedStructData": derived
+                })
+            return json.dumps({
+                "summary": summary_text,
+                "result_count": len(json_results),
+                "results": json_results
+            }, indent=2)
+
         body_text = "\n".join(formatted_excerpts) if formatted_excerpts else "No matching readable content found."
         return summary_prefix + body_text
 

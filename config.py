@@ -27,6 +27,8 @@ class AuthMode(str, Enum):
 
 _MANAGED_ENV_VARS = (
     "GOOGLE_CLOUD_AGENT_ENGINE_ID",
+    "GOOGLE_CLOUD_AGENT_RUNTIME_ID",
+    "AGENT_RUNTIME_ID",
     "K_SERVICE",
     "GAE_ENV",
     "FUNCTION_TARGET",

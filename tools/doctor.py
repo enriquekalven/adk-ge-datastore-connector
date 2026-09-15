@@ -110,7 +110,7 @@ def run_diagnostics(
     if not json_output:
         print("\n[3/4] Checking Execution Environment...")
         if is_managed_runtime():
-            print("  🔒 Managed Production Runtime Detected (Agent Engine / Cloud Run / GAE)")
+            print("  🔒 Managed Production Runtime Detected (Agent Runtime / Cloud Run / GAE)")
         else:
             print("  💻 Local Workstation / Development Runtime Detected")
 
@@ -221,6 +221,12 @@ def run_diagnostics(
                 print(f"  ❌ [{binding_report.get('http_status') or 'FAIL'}] {binding_report['message']}")
                 if "remediation" in binding_report:
                     print(f"     Remediation: {binding_report['remediation']}")
+                # Actionable gcloud remediation commands for internal developers
+                target_p = b.project_id or project_id
+                if "SERVICE_DISABLED" in binding_report.get("message", ""):
+                    print(f"     💡 Run to enable: gcloud services enable discoveryengine.googleapis.com --project={target_p}")
+                elif "IAM_PERMISSION_DENIED" in binding_report.get("message", ""):
+                    print(f"     💡 Run to grant: gcloud projects add-iam-policy-binding {target_p} --member=\"serviceAccount:YOUR_SA@{target_p}.iam.gserviceaccount.com\" --role=\"roles/discoveryengine.viewer\"")
 
     report["overall_status"] = "PASS" if all_ok else "FAIL"
 
@@ -263,9 +269,12 @@ def main():
     parser.add_argument("manifest", nargs="?", default="agent.yaml", help="Path to agent.yaml manifest")
     parser.add_argument("--token", help="Test OAuth bearer token for Category A end-to-end probing")
     parser.add_argument("--json", action="store_true", help="Output diagnostic results as JSON")
+    parser.add_argument("--ci", action="store_true", help="CI/CD gate mode: exit with code 1 immediately if any check fails")
     args = parser.parse_args()
 
     success = run_diagnostics(args.manifest, test_token=args.token, json_output=args.json)
+    if args.ci and not success:
+        sys.exit(1)
     sys.exit(0 if success else 1)
 
 

@@ -2,11 +2,9 @@
 
 [![CI](https://github.com/enriquekalven/adk-ge-datastore-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/enriquekalven/adk-ge-datastore-connector/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/badge/pypi-v1.0.0-blue.svg)](https://pypi.org/project/adk-ge-connectors/)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/enriquekalven/adk-ge-datastore-connector/blob/main/codelab.ipynb)
 [![Google Cloud ADK](https://img.shields.io/badge/Google_Cloud-ADK_2.x-4285F4?logo=googlecloud&logoColor=white)](https://github.com/google/adk-python)
 [![Gemini Enterprise](https://img.shields.io/badge/Gemini-Enterprise_Datastores-8E75B5?logo=google&logoColor=white)](https://cloud.google.com/vertex-ai)
 [![OAuth ACL Security](https://img.shields.io/badge/Security-Multi--Provider_OAuth_ACL-0078D4?logo=lock&logoColor=white)](https://github.com/VeerMuchandi/rad-skills)
-[![AlphaEvolve Compliant](https://img.shields.io/badge/AlphaEvolve-3--Tier_Evaluator-34A853?logo=google&logoColor=white)](https://github.com/google/alphaevolve)
 [![Identity & RBAC FAQ](https://img.shields.io/badge/Architecture-Identity_&_RBAC_FAQ-green?logo=readme&logoColor=white)](FAQ.md)
 
 A production-ready **Google Cloud Agent Development Kit (ADK 2.x)** reference architecture for querying enterprise datastores (**SharePoint, Atlassian Jira, Confluence, Google Drive, Salesforce, ServiceNow**) via Google Cloud Discovery Engine.
@@ -125,11 +123,11 @@ This reference architecture supports all 89 enterprise data connectors integrate
 
 ## Problem Statement & Architectural Motivation
 
-Custom ADK agents running on Agent Engine encounter three limitations when attempting to query enterprise connectors:
+Custom ADK agents running on Agent Runtime (formerly Agent Engine) encounter three limitations when attempting to query enterprise connectors:
 
 | GCP Issue / Limitation | Root Cause | Solution in This Repository |
 | :--- | :--- | :--- |
-| **Connector Tool Inheritance** | ADK agents on Agent Engine do not inherit no-code Gemini Enterprise app connector tools. | **Custom REST Search Tool**: Directly queries `discoveryengine.googleapis.com` endpoints. |
+| **Connector Tool Inheritance** | ADK agents on Agent Runtime do not inherit no-code Gemini Enterprise app connector tools. | **Custom REST Search Tool**: Directly queries `discoveryengine.googleapis.com` endpoints. |
 | **`VertexAiSearchTool` Metadata Deficit** | Built-in `VertexAiSearchTool` defaults to Application Default Credentials (ADC), missing document metadata. | **Explicit Bearer Authorization**: Constructs direct HTTP headers with session access tokens. |
 | **User Access Control Loss** | Service Account search queries bypass end-user document permissions. | **OAuth Identity Delegation**: Extracts calling user tokens from `ToolContext.state` to enforce ACLs. |
 
@@ -397,19 +395,69 @@ datastores:
 
 ---
 
-## FDE Diagnostic Doctor CLI (`tools.doctor`)
+## Internal Developer Tooling Suite
+
+### 1. Scaffolder CLI (`tools.scaffold` / `adk-ge-scaffold`)
+
+Internal teams can scaffold standalone production agents or individual connector skills in seconds:
+
+```bash
+# Scaffold a complete standalone agent project with multiple datastores
+python -m tools.scaffold app \
+  --name "hr_assistant_agent" \
+  --connectors "sharepoint,slack,bigquery"
+
+# Or generate a single modular skill folder
+python -m tools.scaffold skill \
+  --name "confluence" \
+  --category A
+
+# List pre-built connector presets
+python -m tools.scaffold list-presets
+```
+
+### 2. Local Developer 3LO Testing (Option 1)
+
+Test user-level OAuth permissions locally without deploying to GCP:
+
+```bash
+# Set a local test OAuth token (only permitted in local development; strictly fails-closed in production)
+export TEST_OAUTH_TOKEN="ya29.your-test-token"
+python agent.py
+```
+
+### 3. Diagnostic Doctor CLI (`tools.doctor` / `adk-ge-doctor`)
 
 Validate configuration, credentials, and live endpoint connectivity in a single command (< 1,800 ms execution time):
 
 ```bash
-# Run full diagnostic sweep
+# Run full diagnostic sweep with actionable gcloud remediation commands
 python -m tools.doctor
 
 # Run diagnostic sweep with a test OAuth token for Category A verification
 python -m tools.doctor --token "Bearer_Token_Value"
 
-# Run in JSON mode for automated CI/CD pipelines
-python -m tools.doctor --json
+# Run in CI/CD gate mode (exits with code 1 immediately on failure)
+python -m tools.doctor --json --ci
+```
+
+### 4. Gemini Enterprise App Registration CLI (`tools.publish` / `adk-ge-publish`)
+
+Publish and register your deployed agent into a Gemini Enterprise App across environment profiles:
+
+```bash
+# Register with environment profile auto-detection (agent.<env>.yaml)
+python -m tools.publish --env staging
+
+# Register an agent deployed on Agent Runtime (ADK native :streamQuery)
+python -m tools.publish \
+  --gemini-enterprise-app-id "projects/PROJECT_NUMBER/locations/global/collections/default_collection/engines/APP_ID" \
+  --agent-runtime-id "projects/PROJECT_NUMBER/locations/LOCATION/reasoningEngines/ENGINE_ID" \
+  --display-name "Enterprise Knowledge Agent" \
+  --registration-type adk
+
+# Dry run to preview the command
+python -m tools.publish --dry-run
 ```
 
 ---
@@ -464,7 +512,7 @@ agents-cli deploy \
 pip install -r requirements.txt
 ```
 
-### 2. Run Comprehensive Test Suite (53 Tests)
+### 2. Run Comprehensive Test Suite (60 Tests)
 
 Execute the full suite of unit, grant model, and offline mock tests:
 
@@ -477,57 +525,16 @@ Expected output:
 ============================= test session starts ==============================
 platform darwin -- Python 3.14.2, pytest-9.0.2
 
-tests/test_acl_propagation_mock.py::TestACLTokenPropagation::test_alice_hr_user_sees_payroll_and_engineering_docs PASSED [  3%]
-tests/test_acl_propagation_mock.py::TestACLTokenPropagation::test_bob_dev_user_is_blocked_from_hr_payroll_docs PASSED [  6%]
-tests/test_agent.py::test_tool_with_session_oauth_token PASSED           [  9%]
-tests/test_agent.py::test_user_oauth_mode_fails_closed_in_production PASSED [ 12%]
-tests/test_agent.py::test_service_account_mode_category_b_and_c PASSED   [ 15%]
-tests/test_agent.py::test_federated_sts_token_exchange PASSED            [ 18%]
-tests/test_agent.py::test_managed_runtime_blocks_hybrid_dev_mode PASSED  [ 21%]
-tests/test_agent.py::test_category_c_structured_data_and_column_prioritization PASSED [ 25%]
-tests/test_agent.py::test_regional_location_and_path_normalization PASSED [ 28%]
-tests/test_agent.py::test_cuj3_error_classification PASSED               [ 31%]
-tests/test_agent.py::test_acl_probe_diagnostic_branch_separation PASSED  [ 34%]
-tests/test_agent.py::test_pydantic_manifest_validation_rejects_invalid_keys PASSED [ 37%]
-tests/test_agent.py::test_doctor_cli_json_mode PASSED                    [ 40%]
-tests/test_agent.py::test_2lo_and_3lo_auth_mode_normalization PASSED     [ 43%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b1_scope_insufficient PASSED [ 46%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b2_iam_permission_denied PASSED [ 50%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b3_user_project_denied PASSED [ 53%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b4_service_disabled PASSED [ 56%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b5_idp_token_type_unsupported PASSED [ 59%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b6_token_expired_401 PASSED [ 62%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b7_resource_not_found_404 PASSED [ 65%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b8_empty_index_vs_user_acl_probe PASSED [ 68%]
-tests/test_axis_b_scenarios.py::TestAxisBPlatformScenarios::test_b9_doctor_cli_structured_axis_b_output PASSED [ 71%]
-tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_user_token_extracted_from_tool_context_state PASSED [ 75%]
-tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_credential_manager_fallback PASSED [ 78%]
-tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_missing_token_strictly_fails_closed_in_production PASSED [ 81%]
-tests/test_oauth_2lo_3lo.py::TestThreeLeggedOAuth::test_3lo_expired_token_returns_auth_expired PASSED [ 84%]
-tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_client_credentials_service_token PASSED [ 87%]
-tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_spiffe_agent_identity_for_gcp_native_category_c PASSED [ 90%]
-tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_2lo_string_literal_normalization PASSED [ 93%]
-tests/test_oauth_2lo_3lo.py::TestTwoLeggedOAuth::test_3lo_string_literal_normalization PASSED [ 96%]
-tests/test_scale_multi_connector.py::test_enterprise_fleet_concurrency_and_per_thread_auth_isolation PASSED [100%]
+tests/test_acl_propagation_mock.py ..                                    [  3%]
+tests/test_agent.py ...................                                  [ 35%]
+tests/test_axis_b_scenarios.py .........                                 [ 50%]
+tests/test_oauth_2lo_3lo.py ........                                     [ 63%]
+tests/test_remediation_fixes.py ................                         [ 90%]
+tests/test_scale_multi_connector.py .                                    [ 91%]
+tests/test_skills_presets.py .....                                       [100%]
 
-======================== 32 passed, 1 warning in 2.66s =========================
+======================== 60 passed, 1 warning in 3.44s =========================
 ```
-
----
-
-## AlphaEvolve Reranker Evolutionary Trajectory
-
-To evaluate or reproduce the DeepMind AlphaEvolve 3-tier evolutionary search simulation:
-
-```bash
-python3 ae_experiment/run_alphaevolve_simulation.py
-```
-
-### Search Trajectory Results
-* **Generation 0 (Baseline Term Frequency):** Fitness `0.8196` (80% Precision)
-* **Generation 5 (TF + Title Prefix Mutation):** Fitness `0.7396` (60% Precision)
-* **Generation 12 (BM25 Saturation + Exact Match):** Fitness `0.8195` (80% Precision)
-* **Generation 20 (Winning Production Reranker):** Fitness **`0.8988`** (**100% Precision 5/5**, **0.06ms Latency**)
 
 ---
 
@@ -540,4 +547,3 @@ python3 ae_experiment/run_alphaevolve_simulation.py
 - **Authenticate using Agent's Own Authority (SPIFFE Identity)**: [docs.cloud.google.com/iam/docs/auth-agent-own-identity](https://docs.cloud.google.com/iam/docs/auth-agent-own-identity)
 - **Authenticate using API Key with Auth Manager (v2)**: [docs.cloud.google.com/iam/docs/auth-with-api-key-v2](https://docs.cloud.google.com/iam/docs/auth-with-api-key-v2)
 - **Google ADK Framework**: [Google Agent Development Kit](https://github.com/google/adk-python)
-- **DeepMind AlphaEvolve**: [AlphaEvolve Reference Guide](https://github.com/google/alphaevolve)

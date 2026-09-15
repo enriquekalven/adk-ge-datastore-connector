@@ -20,7 +20,7 @@ triggers:
 This skill connects ADK 2.x agents to **Google Cloud BigQuery** structured datastores indexed by Discovery Engine. It uses **2-Legged OAuth (2LO)** service authentication to search structured records with:
 * Schema-aware column allowlisting (displaying only specified fields to the LLM)
 * Deep link generation directly to the BigQuery console UI
-* Sub-millisecond AlphaEvolve Gen 20 ranking
+* Field-aware relevancy scoring
 
 ## Security & Column Allowlisting
 * **Category C (2LO Structured Data)**: Uses GCP Service Account ADC credentials.

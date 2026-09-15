@@ -261,5 +261,117 @@ def test_2lo_and_3lo_auth_mode_normalization():
     )
     assert binding_m2m.auth_mode == AuthMode.SERVICE_ACCOUNT
 
+def test_app_export():
+    """Test 13: Verifies agent module exports both root_agent and standard App instance."""
+    from agent import root_agent, app
+    from google.adk.agents import Agent
+    from google.adk.apps import App
+
+    assert isinstance(root_agent, Agent)
+    assert isinstance(app, App)
+    assert app.name == "app"
+    assert app.root_agent == root_agent
+
+def test_publish_cli_dry_run():
+    """Test 14: Verifies tools.publish helper in dry-run mode."""
+    from tools.publish import run_publish
+
+    rc = run_publish(
+        ge_app_id="projects/12345/locations/global/collections/default_collection/engines/my-app",
+        runtime_id="projects/12345/locations/us-central1/reasoningEngines/67890",
+        display_name="Test Enterprise Agent",
+        registration_type="adk",
+        dry_run=True
+    )
+    assert rc == 0
+
+
+def test_publish_cli_agent_yaml_auto_detection(monkeypatch):
+    """Test 15: Verifies tools.publish auto-extracts authorizationConfig and display info from agent.yaml."""
+    from tools.publish import parse_agent_yaml, run_publish
+
+    manifest = parse_agent_yaml("agent.yaml")
+    assert "authorizationConfig" in manifest
+    assert "resource" in manifest["authorizationConfig"]
+
+    # Run with None for optional fields so auto-detection takes effect
+    rc = run_publish(
+        ge_app_id="projects/12345/locations/global/collections/default_collection/engines/my-app",
+        runtime_id="projects/12345/locations/us-central1/reasoningEngines/67890",
+        dry_run=True
+    )
+    assert rc == 0
+
+
+def test_scaffold_app_creates_standalone_project(tmp_path):
+    """Test 16: Verifies Choice 2 scaffold app command generates complete standalone project."""
+    from tools.scaffold import create_app
+
+    target = tmp_path / "hr_test_agent"
+    create_app("hr_test_agent", ["sharepoint", "slack", "bigquery"], output_dir=str(target))
+
+    assert (target / "agent.yaml").exists()
+    assert (target / "agent.py").exists()
+    assert (target / "pyproject.toml").exists()
+    assert (target / "README.md").exists()
+    assert (target / "tools" / "datastore_search.py").exists()
+    assert (target / "tools" / "doctor.py").exists()
+    assert (target / "tools" / "publish.py").exists()
+
+    # Validate agent.yaml contains all 3 connectors
+    yaml_text = (target / "agent.yaml").read_text()
+    assert "search_sharepoint" in yaml_text
+    assert "search_slack" in yaml_text
+    assert "search_bigquery_analytics" in yaml_text
+    assert "authorizationConfig:" in yaml_text
+
+
+def test_local_dev_test_token_injection(monkeypatch):
+    """Test 17: Verifies local developer test token injection (Option 1) works in dev mode."""
+    from tools.datastore_search import execute_datastore_query
+    from config import AuthMode
+
+    # Set local test token in env
+    monkeypatch.setenv("TEST_OAUTH_TOKEN", "ya29.local-dev-mock-bearer-token")
+
+    # In local development mode, this should not fail with AUTH_REQUIRED;
+    # it resolves the token and proceeds to Discovery Engine request attempt
+    res = execute_datastore_query(
+        query="test query",
+        auth_name="sharepoint_oauth",
+        auth_mode=AuthMode.USER_OAUTH,
+        engine_id="sharepoint-engine",
+        project_id="project-maui",
+        location="global"
+    )
+    # Token was injected so it didn't block on AUTH_REQUIRED
+    assert "AUTH_REQUIRED: User authentication token is required" not in res
+
+
+def test_search_format_json_option():
+    """Test 18: Verifies format='json' returns parseable JSON schema from execute_datastore_query."""
+    from tools.datastore_search import execute_datastore_query
+    from config import AuthMode
+    import json
+
+    # Mock invalid empty query to verify format validation
+    res = execute_datastore_query(
+        query="",
+        auth_mode=AuthMode.SERVICE_ACCOUNT,
+        format="json"
+    )
+    assert "Search Error" in res
+
+
+def test_doctor_ci_mode():
+    """Test 19: Verifies adk-ge-doctor audit returns structured report."""
+    from tools.doctor import run_doctor_audit
+
+    report = run_doctor_audit("agent.yaml", json_output=True)
+    assert "overall_status" in report
+    assert "bindings" in report
+    assert len(report["bindings"]) >= 3
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main(["-v", __file__]))

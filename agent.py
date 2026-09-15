@@ -62,6 +62,12 @@ def create_agent(yaml_path: str = "agent.yaml") -> Agent:
 agent = create_agent()
 root_agent = agent
 
+try:
+    from google.adk.apps import App
+    app = App(name="app", root_agent=root_agent)
+except ImportError:
+    app = None
+
 if __name__ == "__main__":
     print(f"Loaded ADK Generic Enterprise Agent: {agent.name}")
     print(f"Model: {agent.model}")
