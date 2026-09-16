@@ -80,11 +80,13 @@ def run_publish(
     description: str | None = None,
     registration_type: str = "adk",
     authorization_id: str | None = None,
-    dry_run: bool = False
+    dry_run: bool = False,
+    yaml_path: str = "agent.yaml",
+    yes: bool = False
 ) -> int:
     """Prepares and optionally executes `agents-cli publish gemini-enterprise`."""
     prereqs = check_prerequisites()
-    agent_manifest = parse_agent_yaml()
+    agent_manifest = parse_agent_yaml(yaml_path)
 
     print("=" * 65)
     print("   GEMINI ENTERPRISE AGENT PLATFORM PUBLISH HELPER")
@@ -166,7 +168,7 @@ def run_publish(
         return 1
 
     # Approach C: Interactive Confirmation in TTY unless --yes/--ci is passed
-    if sys.stdin.isatty():
+    if not yes and sys.stdin.isatty():
         try:
             confirm = input("⚠️  Proceed with publishing to Gemini Enterprise? [y/N]: ").strip().lower()
             if confirm not in ("y", "yes"):
@@ -247,7 +249,9 @@ def main():
         description=args.description,
         registration_type=args.registration_type,
         authorization_id=args.authorization_id,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
+        yaml_path=yaml_file,
+        yes=args.yes
     )
     sys.exit(rc)
 

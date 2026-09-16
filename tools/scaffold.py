@@ -497,14 +497,22 @@ def create_app(
     )
     (target_dir / "README.md").write_text(readme_content, encoding="utf-8")
 
-    # 5. Copy or symlink library modules config.py and tools/
+    # 5. Copy or symlink library modules config.py, core/, and tools/
     import shutil
     src_root = Path(__file__).resolve().parent.parent
     if (src_root / "config.py").exists():
         shutil.copy2(src_root / "config.py", target_dir / "config.py")
+    if (src_root / "core").exists():
+        target_core = target_dir / "core"
+        target_core.mkdir(exist_ok=True)
+        for core_file in ["__init__.py", "reranker.py"]:
+            src_c = src_root / "core" / core_file
+            if src_c.exists():
+                shutil.copy2(src_c, target_core / core_file)
     if (src_root / "tools").exists():
         target_tools = target_dir / "tools"
         target_tools.mkdir(exist_ok=True)
+        (target_tools / "__init__.py").touch()
         for tool_file in ["datastore_search.py", "doctor.py", "publish.py"]:
             src_f = src_root / "tools" / tool_file
             if src_f.exists():
@@ -514,6 +522,8 @@ def create_app(
     print(f"   ├── agent.yaml  (Pre-configured with {len(connectors)} connector bindings)")
     print("   ├── agent.py    (Exports root_agent and App for :streamQuery)")
     print("   ├── config.py")
+    print("   ├── core/")
+    print("   │   └── reranker.py")
     print("   ├── tools/")
     print("   │   ├── datastore_search.py")
     print("   │   ├── doctor.py")

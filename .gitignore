@@ -1,47 +1,42 @@
-# Python bytecode & cache
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-
-# Environment files
-.env
-.venv
-env/
-venv/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-
-# Temporary artifacts & internal docs
-tmp/
-*.log
-PRD*.md
-MEDIUM*.md
-TEAM*.md
-INTERNAL*.md
-*opus*
-*.metadata.json
 
 # Credentials & Service Accounts
-*.key
-*.pem
-*credentials*.json
-*token*.json
-service_account*.json
-client_secret*.json
-
+# Environment files
+# IDE files
 # Live GCP tests & environment-specific test files
+# Python Build & Distribution Artifacts
+# Python bytecode & cache
+# Temporary artifacts & internal docs
+*$py.class
+*.egg-info/
+*.key
+*.log
+*.metadata.json
+*.pem
+*.py[cod]
+*.swp
+*.tar.gz
+*.whl
+*credentials*.json
+*opus*
+*token*.json
+.env
+.idea/
+.pytest_cache/
+.venv
+.vscode/
+INTERNAL*.md
+MEDIUM*.md
+PRD*.md
+TEAM*.md
+__pycache__/
+build/
+client_secret*.json
+deployment_metadata.json
+dist/
+env/
+scratch/
+service_account*.json
 test_live*.py
 tests/live/
-scratch/
-
-# Python Build & Distribution Artifacts
-dist/
-build/
-*.egg-info/
-*.whl
-*.tar.gz
-
+tmp/
+venv/

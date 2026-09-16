@@ -138,7 +138,10 @@ def run_diagnostics(
             norm_loc, host = _resolve_location(b.location)
             target_proj = b.project_id or project_id or "default-project"
             res_type = b.resource_type or ("dataStores" if "dataStore" in b.engine_id else "engines")
-            url = f"https://{host}/v1alpha/projects/{target_proj}/locations/{norm_loc}/collections/{b.collection}/{res_type}/{b.engine_id}/servingConfigs/default_search:search"
+            api_ver = os.getenv("DISCOVERY_ENGINE_API_VERSION", "v1").lower().strip()
+            if api_ver not in ("v1", "v1alpha", "v1beta"):
+                api_ver = "v1"
+            url = f"https://{host}/{api_ver}/projects/{target_proj}/locations/{norm_loc}/collections/{b.collection}/{res_type}/{b.engine_id}/servingConfigs/default_search:search"
 
             probe_token = test_token if test_token else adc_token
 

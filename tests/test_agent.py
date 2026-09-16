@@ -373,5 +373,59 @@ def test_doctor_ci_mode():
     assert len(report["bindings"]) >= 3
 
 
+def test_adk_function_tool_declaration_and_pickle():
+    """Test 20: Verifies DatastoreSearchTool satisfies ADK 2.x FunctionTool schema generator and pickle serialization."""
+    import pickle
+    from google.adk.tools import FunctionTool
+    from agent import root_agent
+
+    for t in root_agent.tools:
+        # 1. Verify ADK FunctionTool schema introspection works without AttributeError on __code__
+        ft = FunctionTool(t)
+        decl = ft._get_declaration()
+        assert decl.name == t.binding.tool_name
+        assert "query" in decl.parameters.properties
+
+        # 2. Verify pickle serialization roundtrip preserves schema declaration
+        dumped = pickle.dumps(t)
+        loaded = pickle.loads(dumped)
+        ft_loaded = FunctionTool(loaded)
+        decl_loaded = ft_loaded._get_declaration()
+        assert decl_loaded.name == t.binding.tool_name
+
+
+def test_scaffold_app_includes_core_reranker(tmp_path):
+    """Test 21: Verifies scaffolded standalone app includes core/reranker.py and tools/__init__.py."""
+    from tools.scaffold import create_app
+
+    target = tmp_path / "standalone_rerank_agent"
+    create_app("standalone_rerank_agent", ["sharepoint"], output_dir=str(target))
+
+    assert (target / "core" / "reranker.py").exists()
+    assert (target / "core" / "__init__.py").exists()
+    assert (target / "tools" / "__init__.py").exists()
+
+
+def test_publish_custom_yaml_path_and_yes_flag(tmp_path):
+    """Test 22: Verifies tools.publish accepts custom yaml_path and yes flag without TTY prompt."""
+    from tools.publish import run_publish
+
+    custom_yaml = tmp_path / "agent.staging.yaml"
+    custom_yaml.write_text(
+        'name: staging_agent\ndisplay_name: "Staging Knowledge Agent"\ndescription: "Staging description"\n'
+        'authorizationConfig:\n  resource: "projects/999/locations/global/authorizations/staging-auth"\n',
+        encoding="utf-8"
+    )
+
+    rc = run_publish(
+        ge_app_id="projects/999/locations/global/collections/default_collection/engines/staging-app",
+        runtime_id="projects/999/locations/us-central1/reasoningEngines/111",
+        yaml_path=str(custom_yaml),
+        yes=True,
+        dry_run=True
+    )
+    assert rc == 0
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main(["-v", __file__]))

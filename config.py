@@ -62,7 +62,8 @@ class DatastoreBinding(BaseModel):
     scopes: list[str] | None = Field(default=None, description="List of OAuth scopes required for this datastore")
     page_size: int = Field(default=5, ge=1, le=50, description="Max number of search results to retrieve")
     filter: str | None = Field(default=None, description="Discovery Engine filter expression (e.g. branch: main)")
-    enable_reranker: bool = Field(default=False, description="Whether to apply AlphaEvolve Gen20 field-aware local reranking")
+    enable_reranker: bool = Field(default=False, description="Whether to apply field-aware local reranking")
+    response_format: Literal["markdown", "json"] = Field(default="markdown", description="Output format: 'markdown' for LLM citations or 'json' for structured pipelines")
 
     @field_validator("auth_mode", mode="before")
     @classmethod
