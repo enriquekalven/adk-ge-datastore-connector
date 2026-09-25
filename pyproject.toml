@@ -85,7 +85,7 @@ norecursedirs = ["live", "ae_experiment", ".git", "scratch", "dist", "build"]
 [tool.ruff]
 line-length = 120
 target-version = "py310"
-exclude = [".git", "__pycache__", "scratch", "ae_experiment", "dist", "build"]
+exclude = [".git", "__pycache__", "scratch", "ae_experiment", "dist", "build", "tests/live"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B"]
