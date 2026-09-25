@@ -1,0 +1,68 @@
+# Zero-Mock Live Canary Specification for adk-ge-verify-live
+# Copy to live_canaries.yaml and populate with real canary documents in your staging project.
+# Each connector binding is verified across all 6 layers:
+#   Layer 0: Anti-Mock Runtime Guard (rejects unittest.mock / responses / httpretty)
+#   Layer 1: Live Token Provenance & Scope Introspection (real OAuth2 / STS / IAM APIs)
+#   Layer 2: Discovery Engine Control-Plane Compatibility (aclConfig, engine, dataStore, dataConnector)
+#   Layer 3: Positive Canary Query (must return HTTP 200 with expected_doc_substring)
+#   Layer 4: Differential ACL / Differential Canary Proof (Alice sees doc; Bob does NOT see doc)
+#   Layer 5: Cloud Audit Log Proof (correlates request against discoveryengine.googleapis.com audit logs)
+
+project_id: "${PROJECT_ID:-your-gcp-project-id}"
+location: "${LOCATION:-global}"
+collection: "default_collection"
+
+canaries:
+  search_sharepoint:
+    category: "A"
+    query: "Q3 Executive Compensation Policy"
+    expected_doc_substring: "Executive Compensation"
+    alice_token_env: "SHAREPOINT_ALICE_OAUTH_TOKEN"
+    bob_token_env: "SHAREPOINT_BOB_OAUTH_TOKEN"
+
+  search_jira:
+    category: "A"
+    query: "SEC-1042 production incident"
+    expected_doc_substring: "SEC-1042"
+    alice_token_env: "JIRA_ALICE_OAUTH_TOKEN"
+    bob_token_env: "JIRA_BOB_OAUTH_TOKEN"
+
+  search_confluence:
+    category: "A"
+    query: "Architecture Decision Record ADR-009"
+    expected_doc_substring: "ADR-009"
+    alice_token_env: "CONFLUENCE_ALICE_OAUTH_TOKEN"
+    bob_token_env: "CONFLUENCE_BOB_OAUTH_TOKEN"
+
+  search_google_drive:
+    category: "A"
+    query: "Board Deck Q4 Strategy"
+    expected_doc_substring: "Board Deck"
+    alice_token_env: "GOOGLE_DRIVE_ALICE_OAUTH_TOKEN"
+    bob_token_env: "GOOGLE_DRIVE_BOB_OAUTH_TOKEN"
+
+  search_salesforce:
+    category: "A"
+    query: "Acme Corp Enterprise Renewal"
+    expected_doc_substring: "Acme Corp"
+    alice_token_env: "SALESFORCE_ALICE_OAUTH_TOKEN"
+    bob_token_env: "SALESFORCE_BOB_OAUTH_TOKEN"
+
+  search_slack:
+    category: "B"
+    query: "cluster failover postmortem"
+    expected_doc_substring: "failover"
+
+  search_github:
+    category: "B"
+    query: "DatastoreSearchTool"
+    expected_doc_substring: "DatastoreSearchTool"
+
+  search_bigquery_analytics:
+    category: "C"
+    query: "CUST-9921"
+    expected_doc_substring: "CUST-9921"
+    forbidden_columns:
+      - "ssn"
+      - "card_number"
+      - "internal_secret_salt"

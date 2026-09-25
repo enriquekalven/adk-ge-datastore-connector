@@ -64,6 +64,7 @@ Repository = "https://github.com/enriquekalven/adk-ge-datastore-connector"
 adk-ge-doctor = "tools.doctor:main"
 adk-ge-scaffold = "tools.scaffold:main"
 adk-ge-publish = "tools.publish:main"
+adk-ge-verify-live = "tools.verify_live:main"
 
 [tool.setuptools]
 py-modules = ["config", "agent"]

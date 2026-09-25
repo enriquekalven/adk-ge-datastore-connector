@@ -231,5 +231,32 @@ def load_bindings(yaml_path: str | None = None) -> list[DatastoreBinding]:
 
     return bindings
 
+
+def load_agent_config(yaml_path: str | None = None) -> AgentManifestSchema:
+    """Loads the full AgentManifestSchema (with resolved DatastoreBindings and env defaults) for standalone apps."""
+    default_dir = os.path.dirname(os.path.abspath(__file__))
+    if yaml_path is None:
+        yaml_path = os.getenv("AGENT_MANIFEST_PATH", os.path.join(default_dir, "agent.yaml"))
+    if not os.path.isabs(yaml_path) and not os.path.exists(yaml_path):
+        candidate = os.path.join(default_dir, yaml_path)
+        if os.path.exists(candidate):
+            yaml_path = candidate
+
+    bindings = load_bindings(yaml_path)
+    if os.path.exists(yaml_path):
+        with open(yaml_path, encoding="utf-8") as f:
+            expanded_text = _expand_env_vars(f.read())
+        raw_data = yaml.safe_load(expanded_text) or {}
+        raw_data["datastores"] = bindings
+        return AgentManifestSchema.model_validate(raw_data)
+
+    return AgentManifestSchema(
+        name="enterprise_knowledge_agent",
+        description="Enterprise Knowledge Agent",
+        env={"MODEL_NAME": os.getenv("MODEL_NAME", "gemini-2.5-flash")},
+        datastores=bindings,
+    )
+
+
 load_manifest_from_yaml = load_bindings
 
