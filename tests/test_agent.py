@@ -350,9 +350,8 @@ def test_local_dev_test_token_injection(monkeypatch):
 
 def test_search_format_json_option():
     """Test 18: Verifies format='json' returns parseable JSON schema from execute_datastore_query."""
-    from tools.datastore_search import execute_datastore_query
     from config import AuthMode
-    import json
+    from tools.datastore_search import execute_datastore_query
 
     # Mock invalid empty query to verify format validation
     res = execute_datastore_query(

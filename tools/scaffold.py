@@ -53,8 +53,10 @@ TOOL_TEMPLATE_PY = '''"""{title_name} ADK Datastore Tool.
 Category {category}: {auth_desc}.
 """
 
+import inspect
+import logging
 import os
-from typing import Optional, List
+from typing import Optional
 from config import AuthMode
 from tools.datastore_search import execute_datastore_query
 
@@ -65,31 +67,30 @@ except ImportError:
     def tool(func=None, **kwargs):
         return func if func else lambda f: f
 
+logger = logging.getLogger(__name__)
+
 
 @tool
 def search_{name_clean}(
     query: str,
     tool_context: Optional[ToolContext] = None,
-    engine_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    location: Optional[str] = None
+    **_ignored_kwargs,
 ) -> str:
     """Searches {title_name} enterprise data indexed in Discovery Engine.
-    
+
     Category {category} ({auth_mode}).
     {security_desc}
-    
+
     Args:
         query: Natural language search query.
         tool_context: Optional ADK runtime context.
-        engine_id: Optional override for {title_name} engine ID.
-        project_id: Optional override for GCP Project ID.
-        location: Optional override for datastore location ('global', 'us', 'eu').
-        
+
     Returns:
         Structured search results with titles, links, and snippets.
     """
-    target_engine = engine_id or os.environ.get("{name_upper}_ENGINE_ID", "{engine_id}")
+    if _ignored_kwargs:
+        logger.warning("Ignored untrusted runtime routing overrides on search_{name_clean}: %s", list(_ignored_kwargs.keys()))
+    target_engine = os.environ.get("{name_upper}_ENGINE_ID", "{engine_id}")
     return execute_datastore_query(
         query=query,
         tool_context=tool_context,
@@ -97,10 +98,19 @@ def search_{name_clean}(
         auth_name="{token_key}",
         auth_mode=AuthMode.{auth_mode},
         category="{category}",
-        project_id=project_id,
-        location=location,
+        project_id=os.environ.get("PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT"),
+        location=os.environ.get("LOCATION", "global"),
         allow_adc_fallback={allow_adc}
     )
+
+
+search_{name_clean}.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+    parameters=[
+        inspect.Parameter("query", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=str),
+        inspect.Parameter("tool_context", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None, annotation=Optional[ToolContext]),
+    ],
+    return_annotation=str,
+)
 '''
 
 EXAMPLE_AGENT_TEMPLATE_PY = '''"""Standalone Example: {title_name} Enterprise Assistant Agent."""

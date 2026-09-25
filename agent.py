@@ -42,10 +42,17 @@ Your primary objective is to answer user inquiries by securely searching interna
 
 def create_agent(yaml_path: str = "agent.yaml") -> Agent:
     """Factory function to instantiate and configure the Enterprise ADK Agent from declarative bindings."""
-    model_name = os.getenv("MODEL_NAME", "gemini-2.0-flash")
+    from pathlib import Path
+    model_name = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+
+    resolved_yaml = yaml_path
+    if not os.path.exists(resolved_yaml):
+        candidate = Path(__file__).resolve().parent / yaml_path
+        if candidate.exists():
+            resolved_yaml = str(candidate)
 
     # Load declarative datastore bindings from manifest
-    bindings = load_bindings(yaml_path)
+    bindings = load_bindings(resolved_yaml)
     tools = [create_enterprise_datastore_tool(b) for b in bindings] if bindings else [query_enterprise_datastore]
 
     agent = Agent(

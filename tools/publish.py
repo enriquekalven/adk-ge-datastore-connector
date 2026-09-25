@@ -15,8 +15,6 @@ import shutil
 import subprocess
 import sys
 
-from config import is_managed_runtime
-
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("adk-ge-publish")
 

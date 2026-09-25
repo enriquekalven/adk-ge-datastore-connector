@@ -136,7 +136,8 @@ def run_diagnostics(
         }
         try:
             norm_loc, host = _resolve_location(b.location)
-            target_proj = b.project_id or project_id or "default-project"
+            b_proj = b.project_id if b.project_id not in PLACEHOLDER_PROJECTS else None
+            target_proj = b_proj or project_id or "default-project"
             res_type = b.resource_type or ("dataStores" if "dataStore" in b.engine_id else "engines")
             api_ver = os.getenv("DISCOVERY_ENGINE_API_VERSION", "v1").lower().strip()
             if api_ver not in ("v1", "v1alpha", "v1beta"):
